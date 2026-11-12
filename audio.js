@@ -77,7 +77,7 @@
       const now = this.ctx.currentTime;
       if (this.cur) { const old = this.cur; old.g.gain.cancelScheduledValues(now); old.g.gain.setValueAtTime(old.g.gain.value, now); old.g.gain.linearRampToValueAtTime(0, now + 1.2); old.s.stop(now + 1.3); }
       const s = this.ctx.createBufferSource(); s.buffer = this.music[level]; s.loop = true;
-      const g = this.ctx.createGain(); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.22, now + 1.2);
+      const g = this.ctx.createGain(); g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.3, now + 1.2);
       s.connect(g); g.connect(this.musicBus()); s.start();
       this.cur = { s, g };
     },
@@ -85,7 +85,7 @@
     musicBus() {
       if (this.bus) return this.bus;
       const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250;
-      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2500;
+      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500;
       hp.connect(lp); lp.connect(this.master);
       return (this.bus = hp);
     },
@@ -93,37 +93,40 @@
       if (this.cur && this.ctx) { const now = this.ctx.currentTime; this.cur.g.gain.setValueAtTime(this.cur.g.gain.value, now); this.cur.g.gain.linearRampToValueAtTime(0, now + 0.4); this.cur.s.stop(now + 0.5); }
       this.cur = null; this.curLevel = -1;
     },
-    // Bardzo łagodna pozytywka: tylko wysokie, miękkie dzwoneczki i cichutki podkład.
-    // Żadnego basu ani perkusji – wszystko powyżej ~260 Hz, więc mały głośnik telefonu nie brzęczy.
-    // Wyższy poziom combo = odrobinę szybciej i trochę więcej nut, ale wciąż spokojnie.
+    // Klasyczna pętla w stylu barokowym (progresja Kanonu D-dur Pachelbela, utwór z XVII w.):
+    // brzmienie miękkiego fortepianu/harfy, akompaniament „basem Albertiego” w średnim rejestrze
+    // (nic poniżej ~277 Hz, więc głośnik telefonu nie brzęczy). Wyższe combo = żywsze tempo i więcej głosów.
     renderMusic(level) {
-      const sr = this.ctx.sampleRate, bpm = [72, 78, 84, 90][level], beat = 60 / bpm, n = Math.floor(beat * 16 * sr), m = new Float32Array(n);
-      const tone = (f, st, d, v, pad) => {
-        const s0 = Math.floor(st * sr), len = Math.floor(d * sr);
+      const sr = this.ctx.sampleRate, bpm = [92, 100, 108, 116][level], beat = 60 / bpm, bars = 8, n = Math.floor(beat * 4 * bars * sr), m = new Float32Array(n);
+      const hz = k => 440 * Math.pow(2, (k - 69) / 12);
+      // miękki „fortepian”: ton podstawowy + delikatne alikwoty, które gasną szybciej
+      const note = (k, st, v, decay) => {
+        const f = hz(k), s0 = Math.floor(st * sr), len = Math.floor(Math.min(2.2, 4.5 / decay) * sr), atk = 0.005 * sr;
+        // szybka synteza: obrót wskazów zamiast sin/exp w każdej próbce
+        const P = [[1, 1], [2, 0.22], [3, 0.06]].map(([h, amp]) => {
+          const w = 2 * Math.PI * f * h / sr; return { c: Math.cos(w), s: Math.sin(w), x: 1, y: 0, e: amp * v, k: Math.exp(-decay * h / sr) };
+        });
         for (let i = 0; i < len; i++) {
-          const t = i / sr;
-          const e = pad ? Math.min(1, t / 1.0) * Math.min(1, (d - t) / 1.2)          // podkład: bardzo wolne narastanie i wygasanie
-                        : Math.min(1, t / 0.015) * Math.exp(-t * 3 / d);            // dzwoneczek: miękki atak, długie wybrzmienie
-          m[(s0 + i) % n] += Math.sin(2 * Math.PI * f * t) * e * v;                // czysty sinus, bez ostrych harmonicznych
+          let o = 0;
+          for (const q of P) { const nx = q.x * q.c - q.y * q.s; q.y = q.x * q.s + q.y * q.c; q.x = nx; o += q.y * q.e; q.e *= q.k; }
+          m[(s0 + i) % n] += o * (i < atk ? i / atk : 1);
         }
       };
-      // akordy C – Am – F – G zagrane oktawę wyżej niż wcześniej
-      const ch = [[523.25, 659.25, 783.99], [440, 523.25, 659.25], [349.23, 440, 523.25], [392, 493.88, 587.33]];
-      const mel = [[783.99, 659.25, 523.25, 659.25], [659.25, 523.25, 440, 523.25], [523.25, 440, 349.23, 440], [587.33, 493.88, 392, 493.88]];
-      for (let b = 0; b < 4; b++) {
-        const t0 = b * 4 * beat, c = ch[b];
-        c.forEach(f => tone(f / 2, t0, 4 * beat + 0.6, 0.018, true));             // cichy podkład (262–392 Hz)
-        // melodia: spokojne pojedyncze dzwonki
-        const steps = level >= 2 ? 4 : 2;
-        for (let k = 0; k < steps; k++) tone(mel[b][k * 4 / steps], t0 + k * 4 * beat / steps, 4 * beat / steps + 0.8, 0.05, false);
-        // delikatne arpeggio od poziomu 1, gęstsze od poziomu 3
-        if (level >= 1) {
-          const arp = level >= 3 ? 8 : 4;
-          for (let k = 0; k < arp; k++) tone(c[k % 3] * 2, t0 + (k + 0.5) * 4 * beat / arp, beat * 1.5, 0.018, false);
-        }
+      // D – A – Hm – Fism – G – D – G – A (trójdźwięki ułożone od dołu w 4. oktawie)
+      const ch = [[62, 66, 69], [61, 64, 69], [62, 66, 71], [61, 66, 69], [62, 67, 71], [62, 66, 69], [62, 67, 71], [61, 64, 69]];
+      const line = [78, 76, 74, 73, 71, 69, 71, 73];                       // Fis5 E5 D5 Cis5 H4 A4 H4 Cis5
+      const mel = [[78, 81, 79, 78], [76, 69, 73, 76], [74, 78, 76, 74], [73, 66, 69, 73],
+                   [71, 74, 73, 71], [69, 66, 69, 74], [71, 67, 71, 74], [73, 76, 79, 76]];
+      for (let b = 0; b < bars; b++) {
+        const t0 = b * 4 * beat, [lo, mid, hi] = ch[b];
+        if (level === 0) [lo, mid, hi, mid].forEach((k, i) => note(k, t0 + i * beat, 0.035, 2.2));          // spokojnie rozłożony akord
+        else [lo, hi, mid, hi, lo, hi, mid, hi].forEach((k, i) => note(k, t0 + i * beat / 2, i % 2 ? 0.024 : 0.032, 3)); // bas Albertiego
+        if (level < 2) note(line[b], t0, 0.065, 0.9);                        // długie, śpiewne nuty melodii
+        else mel[b].forEach((k, i) => note(k, t0 + i * beat, 0.055, 1.8));   // melodia ćwierćnutami
+        if (level >= 3) note(line[b] + 12, t0 + 2 * beat, 0.025, 1.2);       // drugi głos w wysokim rejestrze
       }
       let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(m[i]));
-      const g = pk > 0 ? 0.35 / pk : 1, buf = this.ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+      const g = pk > 0 ? 0.45 / pk : 1, buf = this.ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
       for (let i = 0; i < n; i++) d[i] = m[i] * g;
       return buf;
     },
