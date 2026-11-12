@@ -84,8 +84,8 @@
     // filtry: obcinają najniższe tony (brzęczenie głośnika) i ostre wysokie
     musicBus() {
       if (this.bus) return this.bus;
-      const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250;
-      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500;
+      const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 160;
+      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
       hp.connect(lp); lp.connect(this.master);
       return (this.bus = hp);
     },
@@ -93,37 +93,51 @@
       if (this.cur && this.ctx) { const now = this.ctx.currentTime; this.cur.g.gain.setValueAtTime(this.cur.g.gain.value, now); this.cur.g.gain.linearRampToValueAtTime(0, now + 0.4); this.cur.s.stop(now + 0.5); }
       this.cur = null; this.curLevel = -1;
     },
-    // Klasyczna pętla w stylu barokowym (progresja Kanonu D-dur Pachelbela, utwór z XVII w.):
-    // brzmienie miękkiego fortepianu/harfy, akompaniament „basem Albertiego” w średnim rejestrze
-    // (nic poniżej ~277 Hz, więc głośnik telefonu nie brzęczy). Wyższe combo = żywsze tempo i więcej głosów.
+    // Ciepła, akustyczna pętla: gitara klasyczna (szarpana struna – algorytm Karplusa-Stronga)
+    // i skrzypce (smyczek z vibrato). Progresja z Kanonu D-dur Pachelbela (XVII w.).
+    // Średni rejestr (ok. 185–500 Hz), bez ostrych wysokich tonów i bez dudniącego basu.
+    // Wyższe combo = żywsze tempo i gęstsze granie.
     renderMusic(level) {
-      const sr = this.ctx.sampleRate, bpm = [92, 100, 108, 116][level], beat = 60 / bpm, bars = 8, n = Math.floor(beat * 4 * bars * sr), m = new Float32Array(n);
+      const sr = this.ctx.sampleRate, bpm = [84, 92, 100, 108][level], beat = 60 / bpm, bars = 8, n = Math.floor(beat * 4 * bars * sr), m = new Float32Array(n);
       const hz = k => 440 * Math.pow(2, (k - 69) / 12);
-      // miękki „fortepian”: ton podstawowy + delikatne alikwoty, które gasną szybciej
-      const note = (k, st, v, decay) => {
-        const f = hz(k), s0 = Math.floor(st * sr), len = Math.floor(Math.min(2.2, 4.5 / decay) * sr), atk = 0.005 * sr;
-        // szybka synteza: obrót wskazów zamiast sin/exp w każdej próbce
-        const P = [[1, 1], [2, 0.22], [3, 0.06]].map(([h, amp]) => {
-          const w = 2 * Math.PI * f * h / sr; return { c: Math.cos(w), s: Math.sin(w), x: 1, y: 0, e: amp * v, k: Math.exp(-decay * h / sr) };
-        });
+      let seed = 777; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) / (1 << 24) * 2 - 1; };
+      // gitara: szum w krótkiej pętli opóźniającej, uśredniany przy każdym obiegu = naturalnie gasnąca struna
+      const guitar = (k, st, v) => {
+        const L = Math.max(2, Math.round(sr / hz(k))), dl = new Float32Array(L), s0 = Math.floor(st * sr), len = Math.floor(2.2 * sr);
+        let prev = 0; for (let i = 0; i < L; i++) { const x = rnd(); prev = prev * 0.5 + x * 0.5; dl[i] = prev; }   // miękkie szarpnięcie (opuszkiem, nie kostką)
+        let idx = 0, last = 0;
         for (let i = 0; i < len; i++) {
-          let o = 0;
-          for (const q of P) { const nx = q.x * q.c - q.y * q.s; q.y = q.x * q.s + q.y * q.c; q.x = nx; o += q.y * q.e; q.e *= q.k; }
-          m[(s0 + i) % n] += o * (i < atk ? i / atk : 1);
+          const cur = dl[idx], nxt = dl[(idx + 1) % L], y = 0.4985 * (cur + nxt);
+          dl[idx] = y; idx = (idx + 1) % L;
+          last = last * 0.3 + cur * 0.7;                                        // przyciemnienie barwy
+          m[(s0 + i) % n] += last * v * (i > len - 2000 ? (len - i) / 2000 : 1);
         }
       };
-      // D – A – Hm – Fism – G – D – G – A (trójdźwięki ułożone od dołu w 4. oktawie)
-      const ch = [[62, 66, 69], [61, 64, 69], [62, 66, 71], [61, 66, 69], [62, 67, 71], [62, 66, 69], [62, 67, 71], [61, 64, 69]];
-      const line = [78, 76, 74, 73, 71, 69, 71, 73];                       // Fis5 E5 D5 Cis5 H4 A4 H4 Cis5
-      const mel = [[78, 81, 79, 78], [76, 69, 73, 76], [74, 78, 76, 74], [73, 66, 69, 73],
-                   [71, 74, 73, 71], [69, 66, 69, 74], [71, 67, 71, 74], [73, 76, 79, 76]];
+      // skrzypce: piłokształtna fala z łagodnie wygaszonymi alikwotami, wolne wejście smyczka i vibrato
+      const violin = (k, st, d, v) => {
+        const f = hz(k), s0 = Math.floor(st * sr), len = Math.floor((d + 0.25) * sr), H = 6;
+        let ph = 0;
+        for (let i = 0; i < len; i++) {
+          const t = i / sr, vib = 1 + 0.004 * Math.min(1, t / 0.4) * Math.sin(2 * Math.PI * 5.2 * t);
+          ph += 2 * Math.PI * f * vib / sr;
+          let w = 0; for (let h = 1; h <= H; h++) w += Math.sin(ph * h) / (h * h);
+          const env = Math.min(1, t / 0.18) * (t > d ? Math.max(0, 1 - (t - d) / 0.25) : 1);
+          m[(s0 + i) % n] += w * env * v;
+        }
+      };
+      // D – A – Hm – Fism – G – D – G – A, chwyty gitarowe (najniższa nuta = bas palcem kciukiem)
+      const ch = [[57, 62, 66, 69], [57, 61, 64, 69], [59, 62, 66, 71], [54, 61, 66, 69], [55, 59, 62, 67], [57, 62, 66, 69], [55, 59, 62, 67], [57, 61, 64, 69]];
+      const line = [66, 64, 62, 61, 59, 57, 59, 61];                       // Fis4 E4 D4 Cis4 H3 A3 H3 Cis4
+      const mel = [[66, 69, 67, 66], [64, 57, 61, 64], [62, 66, 64, 62], [61, 54, 57, 61],
+                   [59, 62, 61, 59], [57, 54, 57, 62], [59, 55, 59, 62], [61, 64, 67, 64]];
       for (let b = 0; b < bars; b++) {
-        const t0 = b * 4 * beat, [lo, mid, hi] = ch[b];
-        if (level === 0) [lo, mid, hi, mid].forEach((k, i) => note(k, t0 + i * beat, 0.035, 2.2));          // spokojnie rozłożony akord
-        else [lo, hi, mid, hi, lo, hi, mid, hi].forEach((k, i) => note(k, t0 + i * beat / 2, i % 2 ? 0.024 : 0.032, 3)); // bas Albertiego
-        if (level < 2) note(line[b], t0, 0.065, 0.9);                        // długie, śpiewne nuty melodii
-        else mel[b].forEach((k, i) => note(k, t0 + i * beat, 0.055, 1.8));   // melodia ćwierćnutami
-        if (level >= 3) note(line[b] + 12, t0 + 2 * beat, 0.025, 1.2);       // drugi głos w wysokim rejestrze
+        const t0 = b * 4 * beat, c = ch[b];
+        const pick = level === 0 ? [0, 2, 3, 2] : [0, 2, 1, 3, 0, 2, 1, 3];
+        const step = 4 * beat / pick.length;
+        pick.forEach((s, i) => guitar(c[s], t0 + i * step + rnd() * 0.008, s === 0 ? 0.55 : 0.4));    // palcówka
+        if (level < 2) violin(line[b], t0, 4 * beat - 0.1, level === 0 ? 0.07 : 0.08);                 // długie nuty skrzypiec
+        else mel[b].forEach((k, i) => violin(k, t0 + i * beat, beat - 0.05, 0.09));                    // melodia ćwierćnutami
+        if (level >= 3) violin(c[3], t0, 4 * beat - 0.1, 0.05);                                              // drugie skrzypce, podkład
       }
       let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(m[i]));
       const g = pk > 0 ? 0.45 / pk : 1, buf = this.ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
