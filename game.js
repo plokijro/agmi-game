@@ -451,6 +451,7 @@
   }
 
   // ---------- przeciąganie ----------
+  const DRAG_SPEED = 1.4;   // 1 = klocek dokładnie za palcem, więcej = szybciej
   function hit(b, x, y) { return Math.hypot(x - b.x, y - b.y) <= b.r; }
   function pointerDown(e) {
     S.unlock();
@@ -465,12 +466,15 @@
     if (!p || p.used) return;
     cancelCelebration();
     const s = A.getShape(p.shapeID);
-    drag = { i: slot, lift: cs * (s.height / 2 + 1.3), t0: now(), startScale: trayCell / cs, cx: trayCenters[slot].x, cy: trayCenters[slot].y, target: null, id: e.pointerId };
+    drag = { i: slot, lift: cs * (s.height / 2 + 1.3), t0: now(), startScale: trayCell / cs, cx: trayCenters[slot].x, cy: trayCenters[slot].y, target: null, id: e.pointerId, sx: x, sy: y };
     moveDrag(x, y); S.play('pickup');
   }
   function moveDrag(x, y) {
     if (!drag) return;
-    drag.cx = x; drag.cy = y - drag.lift;
+    // czułość: klocek porusza się szybciej niż palec (jak w podobnych grach), żeby nie trzeba było
+    // przesuwać palca przez cały ekran
+    drag.cx = clamp(drag.sx + (x - drag.sx) * DRAG_SPEED, 0, W);
+    drag.cy = clamp(drag.sy - drag.lift + (y - drag.sy) * DRAG_SPEED, 0, H);
     const p = model.tray[drag.i], s = A.getShape(p.shapeID);
     const tlx = drag.cx - (s.width - 1) / 2 * cs, tly = drag.cy - (s.height - 1) / 2 * cs;
     const col = Math.round((tlx - bx) / cs - 0.5), row = Math.round((tly - by) / cs - 0.5);
@@ -645,6 +649,9 @@
   window.addEventListener('pointercancel', () => { if (drag) { drag.target = null; upDrag(); } });
   document.addEventListener('visibilitychange', () => { if (S.ctx) { if (document.hidden) S.ctx.suspend(); else S.ctx.resume(); } });
   document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  // iPhone uznaje za gest „odblokowujący” dźwięk dopiero puszczenie palca (touchend / click)
+  document.addEventListener('touchend', () => S.unlock(), { passive: true });
+  document.addEventListener('click', () => S.unlock());
 
   layout();
   trayAnim = [now(), now() + 0.07, now() + 0.14];
