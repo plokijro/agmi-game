@@ -115,6 +115,103 @@
     });
   }
 
+  // ---------- efekty zbijania zależne od planszy ----------
+  const U = K.util;
+  let fp = [];                                                // cząsteczki z kształtami
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  function emit(o) { fp.push(Object.assign({ t: 0, life: 0.8, vx: 0, vy: 0, g: 0, drag: 0, size: 6, grow: 1, rot: Math.random() * 6.3, vr: 0, sway: 0, swayF: 3, alpha: 1 }, o)); }
+  function drawShape(p, k) {
+    const z = p.size * (1 + (p.grow - 1) * k), c = p.col;
+    switch (p.shape) {
+      case 'dot': ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, z / 2, 0, 7); ctx.fill(); break;
+      case 'puff': { const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, z / 2); gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, z / 2, 0, 7); ctx.fill(); break; }
+      case 'ring': ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, z * 0.12); ctx.beginPath(); ctx.arc(0, 0, z / 2, 0, 7); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(-z * 0.18, -z * 0.18, z * 0.1, 0, 7); ctx.fill(); break;
+      case 'star': ctx.fillStyle = c; U.starPath(ctx, 0, 0, z / 2, z / 4.5); ctx.fill(); break;
+      case 'spark': ctx.fillStyle = c; U.starPath(ctx, 0, 0, z / 2, z / 10, 4, 0); ctx.fill(); break;
+      case 'leaf': ctx.fillStyle = c; U.leafPath(ctx, 0, 0, z, z * 0.45, 0); ctx.fill(); break;
+      case 'petal': ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(0, 0, z / 2, z / 3.2, 0, 0, 7); ctx.fill(); break;
+      case 'maple': U.mapleLeaf(ctx, 0, 0, z / 2, 0, c); break;
+      case 'flake': ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, z * 0.12); ctx.lineCap = 'round'; ctx.beginPath(); for (let a = 0; a < 3; a++) { const an = a * Math.PI / 3; ctx.moveTo(-Math.cos(an) * z / 2, -Math.sin(an) * z / 2); ctx.lineTo(Math.cos(an) * z / 2, Math.sin(an) * z / 2); } ctx.stroke(); break;
+      case 'chip': ctx.fillStyle = c; ctx.fillRect(-z / 2, -z / 8, z, z / 4); break;
+      case 'rock': ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-z / 2, -z / 4); ctx.lineTo(-z / 6, -z / 2); ctx.lineTo(z / 2, -z / 5); ctx.lineTo(z / 3, z / 2); ctx.lineTo(-z / 3, z / 2.5); ctx.closePath(); ctx.fill(); break;
+      case 'flame': { const gr = ctx.createRadialGradient(0, z * 0.15, 0, 0, 0, z * 0.6); gr.addColorStop(0, '#fff6c0'); gr.addColorStop(0.4, c); gr.addColorStop(1, 'rgba(255,60,0,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(0, -z * 0.6); ctx.quadraticCurveTo(z * 0.45, 0, 0, z * 0.4); ctx.quadraticCurveTo(-z * 0.45, 0, 0, -z * 0.6); ctx.fill(); break; }
+      case 'coin': { const w = Math.abs(Math.cos(p.t * 9)) * z / 2 + 0.5; ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(0, 0, w, z / 2, 0, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(120,80,10,0.6)'; ctx.lineWidth = 1; ctx.stroke(); break; }
+      default: ctx.fillStyle = c; ctx.fillRect(-z / 2, -z / 2, z, z);
+    }
+  }
+  function drawFp(dt) {
+    fp = fp.filter(p => {
+      p.t += dt; if (p.t < 0) return true; const k = p.t / p.life; if (k >= 1) return false;
+      let x, y;
+      if (p.orbit) {                                           // spirala do środka (czarna dziura)
+        const r = p.r0 * (1 - k), a = p.a0 + p.w * p.t; x = p.cx + Math.cos(a) * r; y = p.cy + Math.sin(a) * r;
+      } else {
+        p.vy += p.g * dt; const d = Math.max(0, 1 - p.drag * dt); p.vx *= d; p.vy *= d;
+        p.x += p.vx * dt; p.y += p.vy * dt; x = p.x + Math.sin(p.t * p.swayF + p.rot) * p.sway; y = p.y;
+      }
+      p.rot += p.vr * dt;
+      const fadeIn = p.fadeIn ? Math.min(1, p.t / p.fadeIn) : 1;
+      ctx.globalAlpha = p.alpha * fadeIn * (k > 0.6 ? 1 - (k - 0.6) / 0.4 : 1);
+      if (p.glow) { ctx.shadowColor = p.col; ctx.shadowBlur = p.glow; }
+      ctx.save(); ctx.translate(x, y); ctx.rotate(p.rot); drawShape(p, k); ctx.restore();
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1; return true;
+    });
+  }
+  // cząsteczki wylatujące z jednego zbitego pola
+  function cellParticles(type, cols, x, y, delay) {
+    const t = -delay, n = (a) => { for (let k = 0; k < a; k++) yield1(k); }; let yield1;
+    switch (type) {
+      case 'shards': yield1 = () => { const a = rnd(0, 6.3), v = rnd(60, 180); emit({ shape: 'rock', col: pick(cols), x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, g: 500, size: rnd(4, 8), vr: rnd(-12, 12), life: 0.7, t }); }; n(4); break;
+      case 'stars': yield1 = () => emit({ shape: 'star', col: pick(cols), x: x + rnd(-8, 8), y, vx: rnd(-40, 40), vy: rnd(-160, -60), size: rnd(7, 13), grow: 0.3, vr: rnd(-4, 4), life: 1.0, glow: 8, t }); n(2); break;
+      case 'bubbles': yield1 = () => emit({ shape: 'ring', col: pick(cols), x: x + rnd(-10, 10), y, vy: rnd(-120, -60), size: rnd(6, 14), grow: 1.3, sway: 6, swayF: 6, life: 1.1, t }); n(2); break;
+      case 'leaves': yield1 = () => emit({ shape: 'leaf', col: pick(cols), x, y, vx: rnd(-60, 60), vy: rnd(-100, -30), g: 140, drag: 1.5, size: rnd(10, 16), vr: rnd(-5, 5), sway: 14, swayF: 4, life: 1.3, t }); n(2); break;
+      case 'embers': yield1 = () => emit({ shape: 'dot', col: pick(cols), x: x + rnd(-10, 10), y, vx: rnd(-20, 20), vy: rnd(-110, -40), size: rnd(3, 6), grow: 0.4, sway: 5, life: 1.0, glow: 10, t }); n(3); break;
+      case 'sand': yield1 = () => emit({ shape: 'sq', col: pick(cols), x: x + rnd(-cs / 2, cs / 2), y: y + rnd(-cs / 2, cs / 2), vx: rnd(-30, 30), vy: rnd(-40, 10), g: 600, size: rnd(2, 4), life: 0.9, t: t + rnd(0, 0.15) }); n(10); break;
+      case 'flakes': yield1 = () => emit({ shape: 'flake', col: pick(cols), x: x + rnd(-10, 10), y, vx: rnd(-50, 50), vy: rnd(-80, 0), g: 80, drag: 1, size: rnd(8, 14), vr: rnd(-3, 3), sway: 8, life: 1.3, t }); n(2); break;
+      case 'petals': yield1 = () => emit({ shape: 'petal', col: pick(cols), x, y, vx: rnd(-80, 80), vy: rnd(-90, -20), g: 90, drag: 1.2, size: rnd(8, 12), vr: rnd(-8, 8), sway: 16, swayF: 5, life: 1.4, t }); n(3); break;
+      case 'pixels': yield1 = () => { const a = rnd(0, 6.3), v = rnd(40, 140); emit({ shape: 'sq', col: pick(cols), x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 3, size: rnd(3, 7), rot: 0, life: 0.6, glow: 6, t }); }; n(4); break;
+      case 'chips': yield1 = () => { const a = rnd(3.5, 5.9), v = rnd(100, 220); emit({ shape: 'chip', col: pick(cols), x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 700, size: rnd(8, 14), vr: rnd(-15, 15), life: 0.9, t }); }; n(3); break;
+      case 'rubble': yield1 = () => { const a = rnd(3.6, 5.8), v = rnd(60, 160); emit({ shape: 'rock', col: pick(cols), x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 800, size: rnd(5, 10), vr: rnd(-10, 10), life: 0.9, t }); }; n(3);
+        emit({ shape: 'puff', col: 'rgba(200,200,210,0.5)', x, y, vy: -20, size: cs * 0.8, grow: 2, life: 0.7, t }); break;
+      case 'flames': yield1 = () => emit({ shape: 'flame', col: pick(cols), x: x + rnd(-cs / 3, cs / 3), y: y + cs * 0.2, vy: rnd(-90, -50), size: rnd(cs * 0.5, cs * 0.8), grow: 0.3, sway: 3, swayF: 10, rot: 0, life: 0.8, t: t + rnd(0, 0.1) }); n(2); break;
+      case 'sparkles': yield1 = () => emit({ shape: 'spark', col: pick(cols), x: x + rnd(-12, 12), y: y + rnd(-12, 12), vy: rnd(-40, -10), size: rnd(8, 14), grow: 0.2, vr: 2, life: 0.9, glow: 10, t: t + rnd(0, 0.2) }); n(2); break;
+      case 'sprinkles': yield1 = () => { const a = rnd(0, 6.3), v = rnd(100, 240); emit({ shape: 'chip', col: pick(cols), x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 50, g: 500, size: rnd(6, 9), vr: rnd(-15, 15), life: 0.9, t }); }; n(5); break;
+      case 'dust': yield1 = () => emit({ shape: 'puff', col: 'rgba(255,255,255,0.55)', x: x + rnd(-8, 8), y: y + rnd(-8, 8), vx: rnd(-30, 30), vy: rnd(-30, 10), size: cs * rnd(0.5, 0.8), grow: 2.2, life: 0.9, t }); n(2); break;
+      case 'orbit': break;
+      case 'maple': yield1 = () => emit({ shape: 'maple', col: pick(cols), x, y, vx: rnd(-50, 50), vy: rnd(-90, -30), g: 120, drag: 1.3, size: rnd(12, 18), vr: rnd(-4, 4), sway: 15, swayF: 3.5, life: 1.4, t }); n(2); break;
+      case 'coins': yield1 = () => emit({ shape: 'coin', col: pick(cols), x, y, vx: rnd(-90, 90), vy: rnd(-260, -150), g: 700, size: rnd(9, 13), rot: 0, life: 1.0, t }); n(1);
+        emit({ shape: 'spark', col: '#fff6c8', x: x + rnd(-10, 10), y: y + rnd(-10, 10), size: 12, grow: 0.1, vr: 3, life: 0.5, glow: 8, t }); break;
+    }
+  }
+  // efekt na całej zbitej linii (wiersz albo kolumna)
+  function lineEffect(fxc, line) {
+    const horiz = line.row !== undefined, x0 = horiz ? bx : bx + line.col * cs, y0 = horiz ? by + line.row * cs : by;
+    const w = horiz ? bw : cs, h = horiz ? cs : bw, cx = x0 + w / 2, cy = y0 + h / 2, acc = fxc.accent;
+    const along = (k) => horiz ? { x: x0 + k * w, y: cy } : { x: cx, y: y0 + k * h };
+    const flash = (dur, a0) => addFx(dur, t => { ctx.globalAlpha = a0 * (1 - t / dur); ctx.fillStyle = acc; ctx.shadowColor = acc; ctx.shadowBlur = 20; ctx.beginPath(); ctx.roundRect(x0, y0, w, h, 6); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; });
+    switch (fxc.line) {
+      case 'flash': flash(0.35, 0.55); break;
+      case 'twinkle': flash(0.3, 0.35); for (let k = 0; k < 8; k++) { const p = along((k + 0.5) / 8); emit({ shape: 'spark', col: '#ffffff', x: p.x, y: p.y, size: cs * 0.7, grow: 0.1, vr: 4, life: 0.5, glow: 12, t: -k * 0.03 }); } break;
+      case 'ripple': flash(0.25, 0.3); for (let k = 0; k < 3; k++) emit({ shape: 'ring', col: acc, x: cx, y: cy, size: cs, grow: 6, life: 0.7, t: -k * 0.12, alpha: 0.7 }); break;
+      case 'sweep': addFx(0.5, t => { const k = t / 0.5, p = along(k); ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
+        const r = cs * 2.2, gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r); gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.3, U.alpha(acc, 0.8)); gr.addColorStop(1, U.alpha(acc, 0)); ctx.fillStyle = gr; ctx.fillRect(x0, y0, w, h); ctx.restore(); }); break;
+      case 'laser': addFx(0.45, t => { const k = Math.min(1, t / 0.15), a = t < 0.15 ? 1 : 1 - (t - 0.15) / 0.3; const p = along(k);
+        ctx.globalAlpha = a; ctx.strokeStyle = acc; ctx.shadowColor = acc; ctx.shadowBlur = 18; ctx.lineWidth = cs * 0.35; ctx.lineCap = 'round'; ctx.beginPath(); const s0 = along(0); ctx.moveTo(s0.x, s0.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = cs * 0.1; ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); break;
+      case 'lightning': addFx(0.45, t => { const a = 1 - t / 0.45; ctx.globalAlpha = a; ctx.strokeStyle = acc; ctx.shadowColor = acc; ctx.shadowBlur = 16; ctx.lineJoin = 'round';
+        for (let b = 0; b < 2; b++) { ctx.lineWidth = b ? 1.5 : 3.5; ctx.strokeStyle = b ? '#fff' : acc; ctx.beginPath(); for (let k = 0; k <= 16; k++) { const p = along(k / 16), j = (k === 0 || k === 16) ? 0 : rnd(-cs * 0.35, cs * 0.35); ctx.lineTo(p.x + (horiz ? 0 : j), p.y + (horiz ? j : 0)); } ctx.stroke(); }
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); break;
+      case 'ribbon': addFx(0.8, t => { const a = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.6; ctx.globalAlpha = a * 0.8; ctx.lineCap = 'round';
+        fxc.colors.forEach((c, j) => { ctx.strokeStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 14; ctx.lineWidth = cs * 0.22; ctx.beginPath(); for (let k = 0; k <= 30; k++) { const p = along(k / 30), o = Math.sin(k / 30 * 9 + t * 10 + j * 2) * cs * 0.3; ctx.lineTo(p.x + (horiz ? 0 : o), p.y + (horiz ? o : 0)); } ctx.stroke(); });
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); break;
+      case 'eraser': addFx(0.55, t => { const k = Math.min(1, t / 0.4), p = along(k), a = t < 0.4 ? 1 : 1 - (t - 0.4) / 0.15;
+        ctx.globalAlpha = 0.35 * a; ctx.fillStyle = '#fff'; const s0 = along(0); if (horiz) ctx.fillRect(s0.x, y0 + 3, p.x - s0.x, h - 6); else ctx.fillRect(x0 + 3, s0.y, w - 6, p.y - s0.y);
+        ctx.globalAlpha = a; ctx.fillStyle = '#c9a26b'; ctx.fillRect(p.x - cs * 0.45, p.y - cs * 0.35, cs * 0.9, cs * 0.7); ctx.fillStyle = '#4a4a55'; ctx.fillRect(p.x - cs * 0.45, p.y + cs * 0.15, cs * 0.9, cs * 0.2); ctx.globalAlpha = 1; }); break;
+      case 'vortex': flash(0.3, 0.3); for (let k = 0; k < 18; k++) emit({ orbit: 1, shape: k % 3 ? 'dot' : 'spark', col: pick(fxc.colors), cx, cy, r0: rnd(cs, horiz ? bw * 0.5 : bw * 0.5), a0: rnd(0, 6.3), w: rnd(5, 9), size: rnd(3, 7), life: 0.8, glow: 8, t: -rnd(0, 0.15) }); break;
+    }
+  }
+
   // ---------- tekst ----------
   function text(s, x, y, size, col, sx = 1, sy = sx, rot = 0, alpha = 1, shadow = true) {
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sx, sy);
@@ -378,8 +475,20 @@
       ctx.drawImage(blockTex(color, cs), p.x - cs * s / 2 + sx, p.y - cs * s / 2, cs * s, cs * s);
     }
     if (ghost) for (const i of ghost.cells) {
-      const p = cellCenter(i); ctx.globalAlpha = ghost.clear.has(i) ? 0.9 : 0.4;
+      const p = cellCenter(i); ctx.globalAlpha = ghost.clear.has(i) ? 1 : 0.45;
       ctx.drawImage(blockTex(ghost.color, cs), p.x - cs / 2 + sx, p.y - cs / 2, cs, cs); ctx.globalAlpha = 1;
+    }
+    if (highlight) {
+      // podgląd zbicia: pulsujący blask na polach i świecąca ramka wokół każdej linii (kolor zależny od planszy)
+      const acc = THEMES[themeIndex].fx.accent, pulse = 0.5 + 0.5 * Math.sin(t * 9);
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.12 + 0.2 * pulse;
+      for (const i of highlight.cells) { const p = cellCenter(i); ctx.fillRect(p.x - cs / 2 + sx + 1, p.y - cs / 2 + 1, cs - 2, cs - 2); }
+      ctx.globalAlpha = 0.55 + 0.45 * pulse; ctx.strokeStyle = acc; ctx.shadowColor = acc; ctx.shadowBlur = 14; ctx.lineWidth = 3;
+      for (const l of highlight.lines) {
+        const x = l.row !== undefined ? bx : bx + l.col * cs, y = l.row !== undefined ? by + l.row * cs : by;
+        ctx.beginPath(); ctx.roundRect(x + sx - 1, y - 1, (l.row !== undefined ? bw : cs) + 2, (l.row !== undefined ? cs : bw) + 2, 6); ctx.stroke();
+      }
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
   }
   function drawPiece(shapeID, color, cx, cy, cell, scale = 1, alpha = 1) {
@@ -432,7 +541,7 @@
     for (let k = fx.length - 1; k >= 0; k--) { const f = fx[k]; if (t - f.t0 > f.dur) { fx.splice(k, 1); if (f.onEnd) f.onEnd(); } }
     if (celebration) drawCelebration();
     if (replay) stepReplay(t);
-    drawParts(dt);
+    drawParts(dt); drawFp(dt);
     if (drag) { const k = prog(t, drag.t0, 0.1), sc = drag.startScale + (1 - drag.startScale) * k; const p = model.tray[drag.i]; drawPiece(p.shapeID, p.color, drag.cx, drag.cy, cs, sc); }
     requestAnimationFrame(frame);
   }
@@ -474,7 +583,7 @@
       const cells = [], clr = new Set();
       for (let k = 0; k < 64; k++) { if (A.bitIsSet(m[0], m[1], k)) cells.push(k); if (A.bitIsSet(ci.lo, ci.hi, k)) clr.add(k); }
       ghost = { cells, clear: clr, color: p.color };
-      if (clr.size) highlight = { cells: clr, color: p.color };
+      if (clr.size) highlight = { cells: clr, color: p.color, lines: linesOf(clr) };
     }
   }
   function upDrag() {
@@ -515,21 +624,43 @@
     }
     if (r.gameOver) later(1.0, () => showGameOver(true));
   }
+  function linesOf(set) {
+    const lines = [];
+    for (let r = 0; r < 8; r++) { let f = true; for (let c = 0; c < 8; c++) if (!set.has(r * 8 + c)) { f = false; break; } if (f) lines.push({ row: r }); }
+    for (let c = 0; c < 8; c++) { let f = true; for (let r = 0; r < 8; r++) if (!set.has(r * 8 + c)) { f = false; break; } if (f) lines.push({ col: c }); }
+    return lines;
+  }
   function animateClear(clear, origin, color, placed) {
-    const cells = [];
+    const fxc = THEMES[themeIndex].fx, cells = [], set = new Set();
     for (let i = 0; i < 64; i++) if (A.bitIsSet(clear.lo, clear.hi, i)) {
+      set.add(i);
       const p = cellCenter(i), col = placed.includes(i) ? color : (lastColors[i] >= 0 ? lastColors[i] : color);
       const delay = Math.hypot(p.x - origin.x, p.y - origin.y) / cs * 0.03;
-      cells.push({ p, col, delay }); sparks(p.x, p.y, delay);
+      cells.push({ p, col, delay, rv: rnd(-1, 1), vx: rnd(-60, 60) });
+      cellParticles(fxc.parts, fxc.colors, p.x, p.y, delay);
     }
-    addFx(0.6, t => {
+    linesOf(set).forEach(l => lineEffect(fxc, l));
+    const V = fxc.vanish, acc = fxc.accent, D = { flash: 0.26, float: 0.5, fade: 0.4, crumble: 0.35, freeze: 0.45, glitch: 0.35, fall: 0.7, burn: 0.45, pop: 0.25, spin: 0.5 }[V] || 0.3;
+    addFx(D + 0.6, t => {
       for (const c of cells) {
-        const k = t - c.delay; if (k > 0.26) continue;
-        let s = 1, a = 1, white = 0;
-        if (k < 0) { } else if (k < 0.08) { s = 1 + 0.2 * k / 0.08; white = 0.7 * k / 0.08; } else { const e = (k - 0.08) / 0.18; s = 1.2 - 1.1 * e; a = 1 - e; white = 0.7; }
-        ctx.globalAlpha = a; ctx.drawImage(blockTex(c.col, cs), c.p.x - cs * s / 2, c.p.y - cs * s / 2, cs * s, cs * s);
-        if (white > 0) { ctx.globalAlpha = a * white; ctx.fillStyle = '#fff'; ctx.fillRect(c.p.x - cs * s / 2, c.p.y - cs * s / 2, cs * s, cs * s); }
-        ctx.globalAlpha = 1;
+        const k = t - c.delay; if (k > D) continue;
+        const e = Math.max(0, k) / D; let s = 1, a = 1, over = 0, overCol = '#fff', dx = 0, dy = 0, rot = 0;
+        if (k >= 0) switch (V) {
+          case 'flash': if (k < 0.08) { s = 1 + 0.2 * k / 0.08; over = 0.7 * k / 0.08; } else { const q = (k - 0.08) / (D - 0.08); s = 1.2 - 1.1 * q; a = 1 - q; over = 0.7; } overCol = acc; break;
+          case 'float': dy = -e * cs * 0.8; a = 1 - e; s = 1 - 0.3 * e; over = 0.5 * (1 - e); overCol = acc; break;
+          case 'fade': a = 1 - e; s = 1 + 0.15 * e; over = 0.6 * Math.sin(e * Math.PI); overCol = acc; break;
+          case 'crumble': s = 1 - e; dy = e * e * cs * 0.6; a = 1 - e * 0.5; overCol = acc; over = 0.3; break;
+          case 'freeze': over = Math.min(0.85, e * 2); overCol = '#e8f8ff'; if (e > 0.5) { s = 1 + (e - 0.5) * 0.6; a = 1 - (e - 0.5) * 2; } break;
+          case 'glitch': dx = (Math.random() - 0.5) * cs * 0.4 * e; a = Math.random() < 0.3 ? 0.2 : 1 - e; over = 0.5; overCol = pick(fxc.colors); break;
+          case 'fall': dy = 900 * k * k - 120 * k; dx = c.vx * k; rot = c.rv * 8 * k; a = 1 - e * 0.6; break;
+          case 'burn': over = Math.min(0.9, e * 1.6); overCol = '#ff6a00'; s = 1 - 0.5 * e; dy = -e * cs * 0.2; a = 1 - e; break;
+          case 'pop': s = 1 + 0.5 * e; a = 1 - e; over = 0.4 * (1 - e); overCol = '#fff'; break;
+          case 'spin': s = 1 - e; rot = e * 6 * (c.rv > 0 ? 1 : -1); a = 1 - e * 0.5; over = 0.4 * e; overCol = acc; break;
+        }
+        ctx.save(); ctx.translate(c.p.x + dx, c.p.y + dy); ctx.rotate(rot); ctx.globalAlpha = Math.max(0, a);
+        ctx.drawImage(blockTex(c.col, cs), -cs * s / 2, -cs * s / 2, cs * s, cs * s);
+        if (over > 0) { ctx.globalAlpha = Math.max(0, a) * over; ctx.fillStyle = overCol; ctx.fillRect(-cs * s / 2, -cs * s / 2, cs * s, cs * s); }
+        ctx.restore(); ctx.globalAlpha = 1;
       }
     });
   }
@@ -657,7 +788,7 @@
   }
 
   function newGame(mode) {
-    hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = [];
+    hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = []; fp = [];
     model.newGame(mode); displayedScore = 0; lastColors = model.cells.slice();
     S.setMusic(0); S.play('newRound');
     const t = now(); trayAnim = [t, t + 0.07, t + 0.14];
@@ -685,5 +816,13 @@
   else later(0.6, announce);
   requestAnimationFrame(frame);
   // dostęp do testów (nie wpływa na grę)
-  window.__agmi = { model, showLooks, setSkin: (i) => { setSkin(i); }, setTheme: (i) => { themeIndex = i; cellThemes.fill(i); }, geo: () => ({ bx, by, cs, trayCenters, hint: btn.hint }), showCombo, celebrate, showGameOver: () => { model.isGameOver = true; showGameOver(true); } };
+  window.__agmi = { model,
+    demoClear: (ti, rows, cols, skin) => {
+      themeIndex = ti; cellThemes.fill(ti); if (skin !== undefined) setSkin(skin);
+      const idx = []; rows.forEach(r => { for (let c = 0; c < 8; c++) idx.push(r * 8 + c); }); cols.forEach(c => { for (let r = 0; r < 8; r++) idx.push(r * 8 + c); });
+      let lo = 0, hi = 0; idx.forEach(i => { if (i < 32) lo |= (1 << i); else hi |= (1 << (i - 32)); });
+      lastColors = model.cells.slice(); idx.forEach(i => { lastColors[i] = i % 7; model.cells[i] = -1; });
+      animateClear({ lo, hi, lines: rows.length + cols.length }, cellCenter(idx[0]), 0, []);
+    },
+    demoHighlight: (ti, rows) => { themeIndex = ti; cellThemes.fill(ti); const set = new Set(); rows.forEach(r => { for (let c = 0; c < 8; c++) set.add(r * 8 + c); }); highlight = { cells: set, color: 2, lines: linesOf(set) }; }, showLooks, setSkin: (i) => { setSkin(i); }, setTheme: (i) => { themeIndex = i; cellThemes.fill(i); }, geo: () => ({ bx, by, cs, trayCenters, hint: btn.hint }), showCombo, celebrate, showGameOver: () => { model.isGameOver = true; showGameOver(true); } };
 })();

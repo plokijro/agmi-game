@@ -485,6 +485,33 @@
       } },
   ];
 
+  // ---------- EFEKTY ZBIJANIA (osobne dla każdej planszy) ----------
+  // accent = kolor podświetlenia linii przy przeciąganiu i błysku,
+  // vanish = jak znikają klocki, line = efekt na całej linii, parts = cząsteczki, colors = ich kolory
+  const FX = [
+    { name: 'Odłamki',         accent: '#ffffff', vanish: 'flash',  line: 'flash',     parts: 'shards',    colors: ['#ffffff', '#d0d0d8'] },
+    { name: 'Spadające gwiazdy', accent: '#ffe680', vanish: 'float', line: 'twinkle',   parts: 'stars',     colors: ['#fff6b0', '#ffffff', '#ffd54a'] },
+    { name: 'Bąbelki',         accent: '#7fe3ff', vanish: 'float',  line: 'ripple',    parts: 'bubbles',   colors: ['#bff0ff', '#ffffff'] },
+    { name: 'Liście',          accent: '#9cff8a', vanish: 'fade',   line: 'flash',     parts: 'leaves',    colors: ['#66bb6a', '#9ccc65', '#2e7d32', '#c5e1a5'] },
+    { name: 'Promień słońca',  accent: '#ffd27a', vanish: 'flash',  line: 'sweep',     parts: 'embers',    colors: ['#ffd27a', '#ff9a5a', '#ffe9b0'] },
+    { name: 'Piasek',          accent: '#ffe0a0', vanish: 'crumble', line: 'flash',    parts: 'sand',      colors: ['#e8b866', '#d19a4a', '#f3d08a'] },
+    { name: 'Lód i śnieg',     accent: '#d8f4ff', vanish: 'freeze', line: 'flash',     parts: 'flakes',    colors: ['#ffffff', '#d8f4ff'] },
+    { name: 'Płatki wiśni',    accent: '#ffb7d5', vanish: 'fade',   line: 'flash',     parts: 'petals',    colors: ['#ffb7d5', '#ffd6e8', '#ff8fbf'] },
+    { name: 'Laser',           accent: '#ff3cd2', vanish: 'glitch', line: 'laser',     parts: 'pixels',    colors: ['#ff3cd2', '#00f0ff', '#ffe56b'] },
+    { name: 'Drzazgi',         accent: '#ffd9a0', vanish: 'fall',   line: 'flash',     parts: 'chips',     colors: ['#8a5a33', '#b07a48', '#6a4220'] },
+    { name: 'Gruz',            accent: '#e0e0e8', vanish: 'fall',   line: 'flash',     parts: 'rubble',    colors: ['#7a7a84', '#9a9aa4', '#55555e'] },
+    { name: 'Ogień',           accent: '#ff8a1a', vanish: 'burn',   line: 'flash',     parts: 'flames',    colors: ['#ffd23a', '#ff8a1a', '#ff3d00'] },
+    { name: 'Wstęga zorzy',    accent: '#3dffa8', vanish: 'fade',   line: 'ribbon',    parts: 'sparkles',  colors: ['#3dffa8', '#8a5cff', '#2ad4ff'] },
+    { name: 'Posypka',         accent: '#ffd166', vanish: 'pop',    line: 'flash',     parts: 'sprinkles', colors: ['#ffd166', '#06d6a0', '#ef476f', '#118ab2', '#ffffff'] },
+    { name: 'Kreda i gąbka',   accent: '#ffffff', vanish: 'fade',   line: 'eraser',    parts: 'dust',      colors: ['#ffffff', '#e8f0ea'] },
+    { name: 'Czarna dziura',   accent: '#c38bff', vanish: 'spin',   line: 'vortex',    parts: 'orbit',     colors: ['#c38bff', '#7fb8ff', '#ffffff'] },
+    { name: 'Fale',            accent: '#6fffe9', vanish: 'float',  line: 'ripple',    parts: 'bubbles',   colors: ['#6fffe9', '#ffffff'] },
+    { name: 'Klony',           accent: '#ffb347', vanish: 'fall',   line: 'flash',     parts: 'maple',     colors: ['#e85d04', '#f48c06', '#dc2f02', '#ffba08'] },
+    { name: 'Złote monety',    accent: '#f5d06a', vanish: 'flash',  line: 'sweep',     parts: 'coins',     colors: ['#f5d06a', '#ffe9a0', '#c9a24a'] },
+    { name: 'Wyładowanie',     accent: '#5dfff0', vanish: 'glitch', line: 'lightning', parts: 'pixels',    colors: ['#5dfff0', '#b6ff6a', '#ffffff'] },
+  ];
+  boards.forEach((b, i) => { b.fx = FX[i]; });
+
   // puste pola rysowane na tle planszy
   function drawSlots(g, w, c, slot) {
     for (let r = 0; r < 8; r++) for (let k = 0; k < 8; k++) {
@@ -502,5 +529,5 @@
     g.save(); g.beginPath(); g.rect(0, 0, s, s); g.clip(); sk.draw(g, s, col, ((k % 7) + 7) % 7); g.restore();
   }
 
-  root.AgmiSkins = { blocks, boards, drawBoard, drawBlock };
+  root.AgmiSkins = { blocks, boards, drawBoard, drawBlock, util: { starPath, heartPath, leafPath, mapleLeaf, hexPath, alpha, shade } };
 })(window);
