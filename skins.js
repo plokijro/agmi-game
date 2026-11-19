@@ -321,6 +321,8 @@
   // jak rozpada się klocek przy zbiciu (kolejność jak w liście wyżej)
   const BREAK = ["quarters", "drops", "shards", "drops", "slices", "quarters", "slices", "crumbs", "shards", "crumbs", "grid3", "grid3", "pixels", "shards", "quarters", "drops", "grid3", "split", "slices", "quarters", "shards", "crumbs", "split", "bricks", "pixels", "grid3", "quarters", "crumbs", "drops", "split", "halves"];
   blocks.forEach((b, i) => { b.breakStyle = BREAK[i]; });
+  // usunięte, bo męczyły oczy
+  for (const n of ['Lawa', 'Obwody']) blocks.splice(blocks.findIndex(b => b.name === n), 1);
 
   // ---------- PLANSZE ----------
   // draw(g, w, c, R): w = bok planszy, c = bok pola, R = losowanie (stałe dla motywu)
