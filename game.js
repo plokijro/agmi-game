@@ -6,23 +6,20 @@
   const overlayEl = document.getElementById('overlay');
   const FONT = '"Arial Rounded MT Bold", "Helvetica Neue", Arial, sans-serif';
   const GOLD = '#fac233', FIRE = '#ff8c26';
-  const BLOCKS = ['#1aa8b0', '#e84061', '#fabd29', '#8f5edb', '#f8822e', '#54c454', '#3d85f0'];
-  const THEMES = [
-    { board: '#171719', cell: '#2b2b30', pattern: 'plain' },
-    { board: '#0a172b', cell: '#1c2e50', pattern: 'dots' },
-    { board: '#0d1f12', cell: '#1d3d24', pattern: 'stripes' },
-    { board: '#2b0f17', cell: '#4f1f2e', pattern: 'diamond' },
-    { board: '#1c0f2b', cell: '#382152', pattern: 'checker' },
-    { board: '#2b200f', cell: '#4a3920', pattern: 'frame' },
-    { board: '#0a2427', cell: '#174a4e', pattern: 'dots' },
-  ];
+  const K = window.AgmiSkins, THEMES = K.boards;
+  const ls = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { } };
+  let skinIndex = (parseInt(ls('agmi.skin', '0'), 10) || 0) % K.blocks.length;
+  let autoLooks = ls('agmi.autoLooks', '1') === '1';      // zmiana wyglądu po czystej planszy
+  let BLOCKS = K.blocks[skinIndex].colors;
+  function setSkin(i) { skinIndex = i; BLOCKS = K.blocks[i].colors; lsSet('agmi.skin', i); }
   const CHARS = ['malePerson', 'femalePerson', 'maleAdventurer', 'femaleAdventurer', 'robot', 'zombie'];
   const POSES = ['idle', 'run0', 'run1', 'run2', 'jump', 'fall', 'duck', 'cheer0', 'cheer1', 'show', 'shove', 'switch0', 'switch1', 'attack0', 'attack1', 'attack2', 'attackKick', 'slide', 'wide'];
   const FW = 144, FH = 192;
   const sheets = {}; CHARS.forEach(c => { const im = new Image(); im.src = 'characters/' + c + '.png'; sheets[c] = im; });
 
   const model = new A.Model();
-  let themeIndex = 0; try { themeIndex = parseInt(localStorage.getItem('agmi.theme') || '0', 10) || 0; } catch (e) { }
+  let themeIndex = (parseInt(ls('agmi.theme', '0'), 10) || 0) % THEMES.length;
   let cellThemes = new Array(64).fill(themeIndex);
 
   // ---------- pomocnicze ----------
@@ -67,6 +64,7 @@
     btn.restart = { x: W - margin - 20, y: headerMid, r: 22 };
     btn.sound = { x: W - margin - 68, y: headerMid, r: 22 };
     btn.music = { x: W - margin - 116, y: headerMid, r: 22 };
+    btn.looks = { x: W - margin - 164, y: headerMid, r: 22 };
     btn.hint = { x: W / 2, y: by + bw + 6 + 22, r: 22 };
     texCache.clear();
   }
@@ -79,30 +77,10 @@
     const g = c.getContext('2d'); g.scale(dpr, dpr); draw(g, w, h); texCache.set(key, c); return c;
   }
   function blockTex(color, s) {
-    return tex('b' + color + '_' + s, s, s, (g) => {
-      const base = BLOCKS[((color % 7) + 7) % 7], i = s * 0.13;
-      g.beginPath(); g.roundRect(0, 0, s, s, s * 0.08); g.clip();
-      g.fillStyle = base; g.fillRect(0, 0, s, s);
-      const poly = (pts, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach(p => g.lineTo(p[0], p[1])); g.closePath(); g.fill(); };
-      poly([[0, 0], [s, 0], [s - i, i], [i, i]], shade(base, 0.35));
-      poly([[0, 0], [i, i], [i, s - i], [0, s]], shade(base, 0.15));
-      poly([[s, 0], [s, s], [s - i, s - i], [s - i, i]], shade(base, -0.15));
-      poly([[0, s], [i, s - i], [s - i, s - i], [s, s]], shade(base, -0.32));
-      g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(i, i, s - 2 * i, (s - 2 * i) * 0.45);
-    });
+    return tex('b' + skinIndex + '_' + color + '_' + s, s, s, (g) => K.drawBlock(g, skinIndex, color, s));
   }
-  function cellTex(ti, s) {
-    return tex('e' + ti + '_' + s, s, s, (g) => {
-      const th = THEMES[ti];
-      g.beginPath(); g.roundRect(1, 1, s - 2, s - 2, s * 0.06); g.fillStyle = th.cell; g.fill(); g.clip();
-      const acc = shade(th.cell, 0.12); g.fillStyle = acc; g.strokeStyle = acc;
-      if (th.pattern === 'dots') { g.beginPath(); g.arc(s / 2, s / 2, s * 0.09, 0, 7); g.fill(); }
-      if (th.pattern === 'stripes') { g.lineWidth = s * 0.08; g.beginPath(); for (let k = -1; k <= 1; k += 0.5) { g.moveTo(k * s, s); g.lineTo(k * s + s, 0); } g.stroke(); }
-      if (th.pattern === 'checker') { g.fillRect(0, 0, s / 2, s / 2); g.fillRect(s / 2, s / 2, s / 2, s / 2); }
-      if (th.pattern === 'diamond') { const d = s * 0.2; g.beginPath(); g.moveTo(s / 2, s / 2 - d); g.lineTo(s / 2 + d, s / 2); g.lineTo(s / 2, s / 2 + d); g.lineTo(s / 2 - d, s / 2); g.fill(); }
-      if (th.pattern === 'frame') { g.lineWidth = s * 0.06; g.strokeRect(s * 0.2, s * 0.2, s * 0.6, s * 0.6); }
-    });
-  }
+  function boardTex(ti) { return tex('B' + ti + '_' + bw, bw, bw, (g) => K.drawBoard(g, ti, bw)); }
+  function pageTheme() { return celebration ? (now() - celebration.t0 > 2.7 ? celebration.next : celebration.prev) : themeIndex; }
 
   // ---------- stan ekranu ----------
   let displayedScore = model.score, comboAlpha = model.combo > 0 ? 1 : 0;
@@ -323,9 +301,10 @@
   // ---------- świętowanie czystej planszy ----------
   function celebrate(bannerLines) {
     const words = ['WOW!', 'SUPER!', 'BRAWO!', 'CZYSTO!', 'MISTRZ!', 'EKSTRA!', 'OGIEŃ!'];
-    let next = Math.floor(Math.random() * THEMES.length); if (next === themeIndex) next = (next + 1) % THEMES.length;
+    let next = themeIndex; if (autoLooks) { next = Math.floor(Math.random() * THEMES.length); if (next === themeIndex) next = (next + 1) % THEMES.length; }
     celebration = { prev: themeIndex, t0: now(), word: words[Math.floor(Math.random() * words.length)], next, chars: CHARS.slice().sort(() => Math.random() - 0.5), bgSwitched: false };
-    themeIndex = next; try { localStorage.setItem('agmi.theme', String(next)); } catch (e) { }
+    themeIndex = next; lsSet('agmi.theme', next);
+    if (autoLooks) { let ns = Math.floor(Math.random() * K.blocks.length); if (ns === skinIndex) ns = (ns + 1) % K.blocks.length; setSkin(ns); }
     confetti();
     for (let i = 0; i < 64; i += 2) { const p = cellCenter(i); sparks(p.x, p.y, Math.random() * 0.4 + 0.1); }
     later(0.3, () => S.play('combo'));
@@ -368,6 +347,7 @@
     ctx.font = `bold 26px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = GOLD;
     ctx.fillText(String(model.highScore), margin + 34, headerMid);
     const icon = (b, s, alpha = 1) => { ctx.globalAlpha = alpha; ctx.font = `22px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#d9d9d9'; ctx.fillText(s, b.x, b.y + 1); ctx.globalAlpha = 1; };
+    icon(btn.looks, '🎨');
     icon(btn.music, '♫', S.musicEnabled ? 1 : 0.3);
     icon(btn.sound, S.enabled ? '🔊' : '🔇');
     icon(btn.restart, '↻');
@@ -380,9 +360,15 @@
   function drawBoard(cells) {
     const sx = boardShake();
     // tło planszy zmienia kolor dopiero, gdy postacie skończą malowanie
-    ctx.fillStyle = THEMES[celebration ? (now() - celebration.t0 > 2.7 ? celebration.next : celebration.prev) : themeIndex].board;
-    ctx.beginPath(); ctx.roundRect(bx - 6 + sx, by - 6, bw + 12, bw + 12, 10); ctx.fill();
-    for (let i = 0; i < 64; i++) { const p = cellCenter(i); ctx.drawImage(cellTex(celebration ? cellThemes[i] : themeIndex, cs), p.x - cs / 2 + sx, p.y - cs / 2, cs, cs); }
+    const fr = THEMES[pageTheme()].frame;
+    ctx.fillStyle = fr; ctx.beginPath(); ctx.roundRect(bx - 6 + sx, by - 6, bw + 12, bw + 12, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
+    if (!celebration) ctx.drawImage(boardTex(themeIndex), bx + sx, by, bw, bw);
+    else for (let i = 0; i < 64; i++) {
+      // podczas przemalowywania każde pole bierze wycinek z planszy swojego motywu
+      const img = boardTex(cellThemes[i]), r = Math.floor(i / 8), c = i % 8, k = img.width / 8;
+      ctx.drawImage(img, c * k, r * k, k, k, bx + c * cs + sx, by + r * cs, cs, cs);
+    }
     const t = now();
     for (let i = 0; i < 64; i++) {
       if (cells[i] < 0) continue;
@@ -434,7 +420,8 @@
   function frame() {
     const t = now(), dt = Math.min(0.05, t - last); last = t;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#1f1f21'; ctx.fillRect(0, 0, W, H);
+    const pg = THEMES[pageTheme()].page; ctx.fillStyle = pg[0] === pg[1] ? pg[0] : (() => { const gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, pg[0]); gr.addColorStop(1, pg[1]); return gr; })();
+    ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
     // wynik liczy się płynnie
     if (displayedScore < model.score) displayedScore = Math.min(model.score, displayedScore + Math.max(1, (model.score - displayedScore) * 0.15)); else if (displayedScore > model.score) displayedScore = model.score;
     comboAlpha += ((model.combo > 0 ? 1 : 0) - comboAlpha) * 0.15;
@@ -457,6 +444,7 @@
     S.unlock();
     if (overlayOpen || replay) return;
     const x = e.clientX, y = e.clientY;
+    if (hit(btn.looks, x, y)) { showLooks(); return; }
     if (hit(btn.music, x, y)) { S.toggleMusic(); return; }
     if (hit(btn.sound, x, y)) { S.toggleSound(); return; }
     if (hit(btn.restart, x, y)) { askRestart(); return; }
@@ -632,6 +620,42 @@
     if (cancelable) b.push(['Anuluj', '#525252', hideOverlay]);
     showOverlay([['Wybierz tryb gry', 28, '#fff'], ['Wynik z podpowiedziami nie liczy się do rekordu', 13, '#ccc']], b);
   }
+  // ---------- menu „Wygląd” ----------
+  function preview(w, h, draw) {
+    const c = document.createElement('canvas'), d = Math.min(3, window.devicePixelRatio || 1);
+    c.width = w * d; c.height = h * d; c.style.width = w + 'px'; c.style.height = h + 'px';
+    const g = c.getContext('2d'); g.scale(d, d); draw(g); return c;
+  }
+  function showLooks() {
+    if (drag) return;
+    overlayOpen = true; overlayEl.innerHTML = '';
+    const panel = document.createElement('div'); panel.className = 'panel looks scroll';
+    const h = (txt, size, col) => { const d = document.createElement('div'); d.className = 'line'; d.textContent = txt; d.style.fontSize = size + 'px'; d.style.color = col; panel.appendChild(d); return d; };
+    h('Wygląd', 28, '#fff');
+    const sections = [
+      ['Klocki', K.blocks, skinIndex, (i) => preview(56, 56, g => { const s = 26; [[0, 0, 0], [1, 0, 1], [0, 1, 2], [1, 1, 3]].forEach(([x, y, k]) => { g.save(); g.translate(2 + x * (s + 0), 2 + y * (s + 0)); K.drawBlock(g, i, k, s); g.restore(); }); }),
+        (i) => { setSkin(i); texCache.clear(); }],
+      ['Plansze', THEMES, themeIndex, (i) => preview(56, 56, g => { g.fillStyle = THEMES[i].frame; g.beginPath(); g.roundRect(0, 0, 56, 56, 6); g.fill(); g.save(); g.translate(3, 3); K.drawBoard(g, i, 50); g.restore(); }),
+        (i) => { cancelCelebration(); themeIndex = i; cellThemes.fill(i); lsSet('agmi.theme', i); }],
+    ];
+    sections.forEach(([title, list, cur, mk, pick]) => {
+      h(title, 18, GOLD);
+      const grid = document.createElement('div'); grid.className = 'grid';
+      list.forEach((item, i) => {
+        const tile = document.createElement('div'); tile.className = 'tile' + (i === cur ? ' sel' : '');
+        tile.appendChild(mk(i)); const lb = document.createElement('span'); lb.textContent = item.name; tile.appendChild(lb);
+        tile.onclick = () => { pick(i); grid.querySelectorAll('.tile').forEach(t => t.classList.remove('sel')); tile.classList.add('sel'); };
+        grid.appendChild(tile);
+      });
+      panel.appendChild(grid);
+    });
+    const tog = document.createElement('button');
+    const upd = () => { tog.textContent = 'Zmiana po czystej planszy: ' + (autoLooks ? 'TAK' : 'NIE'); tog.style.background = autoLooks ? '#33ad66' : '#525252'; };
+    tog.onclick = () => { autoLooks = !autoLooks; lsSet('agmi.autoLooks', autoLooks ? 1 : 0); upd(); }; upd(); tog.style.fontSize = '16px'; panel.appendChild(tog);
+    const close = document.createElement('button'); close.textContent = 'Gotowe'; close.style.background = '#3d80eb'; close.onclick = hideOverlay; panel.appendChild(close);
+    overlayEl.appendChild(panel); overlayEl.classList.add('show');
+  }
+
   function newGame(mode) {
     hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = [];
     model.newGame(mode); displayedScore = 0; lastColors = model.cells.slice();
@@ -648,7 +672,7 @@
   window.addEventListener('pointerup', () => upDrag());
   window.addEventListener('pointercancel', () => { if (drag) { drag.target = null; upDrag(); } });
   document.addEventListener('visibilitychange', () => { if (S.ctx) { if (document.hidden) S.ctx.suspend(); else S.ctx.resume(); } });
-  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  document.addEventListener('touchmove', e => { if (!(e.target.closest && e.target.closest('.scroll'))) e.preventDefault(); }, { passive: false });
   // iPhone uznaje za gest „odblokowujący” dźwięk dopiero puszczenie palca (touchend / click)
   document.addEventListener('touchend', () => S.unlock(), { passive: true });
   document.addEventListener('click', () => S.unlock());
@@ -661,5 +685,5 @@
   else later(0.6, announce);
   requestAnimationFrame(frame);
   // dostęp do testów (nie wpływa na grę)
-  window.__agmi = { model, geo: () => ({ bx, by, cs, trayCenters, hint: btn.hint }), showCombo, celebrate, showGameOver: () => { model.isGameOver = true; showGameOver(true); } };
+  window.__agmi = { model, showLooks, setSkin: (i) => { setSkin(i); }, setTheme: (i) => { themeIndex = i; cellThemes.fill(i); }, geo: () => ({ bx, by, cs, trayCenters, hint: btn.hint }), showCombo, celebrate, showGameOver: () => { model.isGameOver = true; showGameOver(true); } };
 })();

@@ -1,8 +1,8 @@
 // Agmi – działanie offline: wszystkie pliki gry są zapisywane w pamięci telefonu.
 // Po każdej zmianie gry podnieś numer wersji, żeby telefon pobrał nowe pliki.
-const VERSION = 'agmi-v6';
+const VERSION = 'agmi-v7';
 const FILES = [
-  './', './index.html', './logic.js', './audio.js', './game.js', './manifest.json',
+  './', './index.html', './logic.js', './audio.js', './skins.js', './game.js', './manifest.json',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
   './characters/malePerson.png', './characters/femalePerson.png', './characters/maleAdventurer.png',
   './characters/femaleAdventurer.png', './characters/robot.png', './characters/zombie.png',
