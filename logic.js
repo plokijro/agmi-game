@@ -357,10 +357,13 @@
   // ---------- Losowanie rundy ----------
   // pity = premia do szans (w punktach procentowych / 100) za każdą nieudaną próbę danego przypadku:
   // co losowanie bez danego zestawu szansa rośnie o 10 pkt, po jego otrzymaniu wraca do bazowej
-  const PITY_STEP = 0.1;
-  function generate(lo, hi, score, pity) {
+  // poziom „normalny”: +10 pkt za każde nietrafienie, losowy zestaw na 60 000+
+  // poziom „trudny”: +5 pkt, a na 60 000+ zawsze najtrudniejszy zestaw (za to punkty ×2)
+  function generate(lo, hi, score, pity, hard) {
+    const PITY_STEP = hard ? 0.05 : 0.1;
     pity = pity || { full: 0, steer: 0, great: 0 };
     const l = level(score), cfg = config(l), start = performance.now(), cells = popcount(lo, hi);
+    if (hard) cfg.randomPick = false;
     const miss = k => { pity[k] = Math.min(1, pity[k] + PITY_STEP); }, hit = k => { pity[k] = 0; };
     if (cells > 0 && cells <= 40) {
       if (Math.random() < cfg.fullClear + pity.full) {
@@ -427,8 +430,10 @@
       if (!this.load()) this.newGame();
     }
     get bits() { return bitsFromCells(this.cells); }
-    newGame(mode) {
+    get mult() { return this.difficulty === 'hard' ? 2 : 1; }
+    newGame(mode, difficulty) {
       if (mode) this.mode = mode;
+      this.difficulty = this.mode === 'classic' && difficulty === 'hard' ? 'hard' : 'normal';
       this.cells = new Array(64).fill(-1);
       this.score = 0; this.combo = 0; this.roundHadClear = false; this.isGameOver = false; this.round = 0; this.pity = { full: 0, steer: 0, great: 0 };
       this.startNewRound(); this.save();
@@ -437,7 +442,7 @@
       this.round++; this.roundHadClear = false; this.roundLinesCleared = 0;
       const [lo, hi] = this.bits;
       if (!this.pity) this.pity = { full: 0, steer: 0, great: 0 };
-      const r = generate(lo, hi, this.score, this.pity);
+      const r = generate(lo, hi, this.score, this.pity, this.difficulty === 'hard');
       const colors = [0, 1, 2, 3, 4, 5, 6].sort(() => Math.random() - 0.5);
       this.tray = r.ids.map((id, i) => ({ shapeID: id, color: colors[i], used: false }));
       this.roundStartCells = this.cells.slice();
@@ -482,13 +487,13 @@
       let points = 0, comboIncreased = false;
       if (clear.lines > 0) {
         this.combo++; this.roundHadClear = true; comboIncreased = true;
-        points = 5 * clear.lines * clear.cellCount * this.combo;
+        points = 5 * clear.lines * clear.cellCount * this.combo * this.mult;
         this.score += points; this.roundLinesCleared += clear.lines;
         for (let k = 0; k < 64; k++) if (bitIsSet(clear.lo, clear.hi, k)) this.cells[k] = -1;
       }
       const after = this.bits, boardCleared = clear.lines > 0 && after[0] === 0 && after[1] === 0;
       let clearBonus = 0;
-      if (boardCleared) { clearBonus = 100 * clear.cellCount * Math.max(1, this.combo); this.score += clearBonus; }
+      if (boardCleared) { clearBonus = 100 * clear.cellCount * Math.max(1, this.combo) * this.mult; this.score += clearBonus; }
       const roundEnded = this.tray.every(p => p.used);
       if (roundEnded) { if (!this.roundHadClear) this.combo = 0; this.startNewRound(); } else this.updatePotential();
       let newHigh = false;
@@ -500,7 +505,7 @@
     save() {
       const s = { mode: this.mode, cells: this.cells, tray: this.tray, score: this.score, combo: this.combo, roundHadClear: this.roundHadClear,
         roundStartCells: this.roundStartCells, roundPieces: this.roundPieces, solution: this.solution, gameOver: this.isGameOver, round: this.round,
-        potentialLines: this.potentialLines, potentialEmpty: this.potentialEmpty, roundLinesCleared: this.roundLinesCleared, pity: this.pity };
+        potentialLines: this.potentialLines, potentialEmpty: this.potentialEmpty, roundLinesCleared: this.roundLinesCleared, pity: this.pity, difficulty: this.difficulty };
       store.set(SAVE_KEY, JSON.stringify(s));
     }
     load() {
@@ -509,7 +514,7 @@
       if (!s.tray.every(p => BY_ID[p.shapeID])) return false;
       Object.assign(this, { mode: s.mode || 'classic', cells: s.cells, tray: s.tray, score: s.score, combo: s.combo, roundHadClear: s.roundHadClear,
         roundStartCells: s.roundStartCells || s.cells.slice(), roundPieces: s.roundPieces || s.tray, solution: s.solution || [], isGameOver: false,
-        round: s.round || 1, potentialLines: s.potentialLines || 0, potentialEmpty: !!s.potentialEmpty, roundLinesCleared: s.roundLinesCleared || 0, pity: s.pity || { full: 0, steer: 0, great: 0 } });
+        round: s.round || 1, potentialLines: s.potentialLines || 0, potentialEmpty: !!s.potentialEmpty, roundLinesCleared: s.roundLinesCleared || 0, pity: s.pity || { full: 0, steer: 0, great: 0 }, difficulty: s.difficulty === 'hard' ? 'hard' : 'normal' });
       if (this.tray.every(p => p.used)) this.startNewRound();
       if (!this.hasAnyMove()) this.isGameOver = true;
       this.loadedFromSave = true;

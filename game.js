@@ -451,6 +451,7 @@
     icon(btn.sound, S.enabled ? '🔊' : '🔇');
     icon(btn.restart, '↻');
     if (model.mode === 'hints') { ctx.font = `bold 13px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,230,128,0.9)'; ctx.fillText('💡 z podpowiedziami', margin, headerMid + 26); }
+    if (model.difficulty === 'hard') { ctx.font = `bold 13px ${FONT}`; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9a4d'; ctx.fillText('🔥 trudny · punkty ×2', margin, headerMid + 26); }
     const sc = Math.min(56, Math.max(36, cs * 1.2));
     text(String(Math.floor(displayedScore)), W / 2, scoreY, sc, '#fff', 1, 1, 0, 1, false);
     if (replay) text(replay.title, W / 2, by - 16, 17, GOLD, 1, 1, 0, 1, false);
@@ -831,7 +832,7 @@
       [['Tak, nowa gra', '#d94554', () => showModePicker(true)], ['Anuluj', '#525252', hideOverlay]]);
   }
   function showModePicker(cancelable) {
-    const b = [['Klasyczna', '#33ad66', () => newGame('classic')], ['Z podpowiedziami', '#3d80eb', () => newGame('hints')]];
+    const b = [['Klasyczna', '#33ad66', () => showDifficultyPicker(cancelable)], ['Z podpowiedziami', '#3d80eb', () => newGame('hints')]];
     if (cancelable) b.push(['Anuluj', '#525252', hideOverlay]);
     showOverlay([['Wybierz tryb gry', 28, '#fff'], ['Wynik z podpowiedziami nie liczy się do rekordu', 13, '#ccc']], b);
   }
@@ -871,9 +872,13 @@
     overlayEl.appendChild(panel); overlayEl.classList.add('show');
   }
 
-  function newGame(mode) {
+  function showDifficultyPicker(cancelable) {
+    showOverlay([['Poziom trudności', 28, '#fff'], ['Trudny: trudniejsze zestawy, ale punkty ×2', 13, '#ccc']],
+      [['Normalny', '#33ad66', () => newGame('classic', 'normal')], ['Trudny  ×2', '#d9773a', () => newGame('classic', 'hard')], ['Wstecz', '#525252', () => showModePicker(cancelable)]]);
+  }
+  function newGame(mode, difficulty) {
     hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = []; fp = []; frags = [];
-    model.newGame(mode); displayedScore = 0; lastColors = model.cells.slice();
+    model.newGame(mode, difficulty); displayedScore = 0; lastColors = model.cells.slice();
     S.setMusic(0); S.play('newRound');
     const t = now(); trayAnim = [t, t + 0.07, t + 0.14];
     later(0.5, announce);
