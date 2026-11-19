@@ -318,6 +318,10 @@
       } },
   ];
 
+  // jak rozpada się klocek przy zbiciu (kolejność jak w liście wyżej)
+  const BREAK = ["quarters", "drops", "shards", "drops", "slices", "quarters", "slices", "crumbs", "shards", "crumbs", "grid3", "grid3", "pixels", "shards", "quarters", "drops", "grid3", "split", "slices", "quarters", "shards", "crumbs", "split", "bricks", "pixels", "grid3", "quarters", "crumbs", "drops", "split", "halves"];
+  blocks.forEach((b, i) => { b.breakStyle = BREAK[i]; });
+
   // ---------- PLANSZE ----------
   // draw(g, w, c, R): w = bok planszy, c = bok pola, R = losowanie (stałe dla motywu)
   // slot = wygląd pustych pól, page = tło ekranu (góra, dół), frame = ramka planszy
@@ -510,7 +514,9 @@
     { name: 'Złote monety',    accent: '#f5d06a', vanish: 'flash',  line: 'sweep',     parts: 'coins',     colors: ['#f5d06a', '#ffe9a0', '#c9a24a'] },
     { name: 'Wyładowanie',     accent: '#5dfff0', vanish: 'glitch', line: 'lightning', parts: 'pixels',    colors: ['#5dfff0', '#b6ff6a', '#ffffff'] },
   ];
-  boards.forEach((b, i) => { b.fx = FX[i]; });
+  // jak kawałki zbitych klocków odlatują z planszy
+  const MOTION = ["explode", "float", "float", "leaf", "wind", "sand", "snow", "petal", "glitch", "gravity", "heavy", "burn", "wave", "pop", "gravity", "vortex", "sink", "leaf", "fountain", "glitch"];
+  boards.forEach((b, i) => { b.fx = FX[i]; b.fx.motion = MOTION[i]; });
 
   // puste pola rysowane na tle planszy
   function drawSlots(g, w, c, slot) {

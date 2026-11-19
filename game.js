@@ -541,7 +541,7 @@
     for (let k = fx.length - 1; k >= 0; k--) { const f = fx[k]; if (t - f.t0 > f.dur) { fx.splice(k, 1); if (f.onEnd) f.onEnd(); } }
     if (celebration) drawCelebration();
     if (replay) stepReplay(t);
-    drawParts(dt); drawFp(dt);
+    drawFrags(dt); drawParts(dt); drawFp(dt);
     if (drag) { const k = prog(t, drag.t0, 0.1), sc = drag.startScale + (1 - drag.startScale) * k; const p = model.tray[drag.i]; drawPiece(p.shapeID, p.color, drag.cx, drag.cy, cs, sc); }
     requestAnimationFrame(frame);
   }
@@ -630,37 +630,119 @@
     for (let c = 0; c < 8; c++) { let f = true; for (let r = 0; r < 8; r++) if (!set.has(r * 8 + c)) { f = false; break; } if (f) lines.push({ col: c }); }
     return lines;
   }
+  // ---------- rozpad klocków: kształt kawałków zależy od wyglądu klocka, ruch od planszy ----------
+  let frags = [];
+  const polyCache = {};
+  function breakPolys(style) {
+    if (polyCache[style]) return polyCache[style];
+    const sq = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], P = [];
+    const grid = n => { for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) P.push(sq(c / n, r / n, 1 / n, 1 / n)); };
+    switch (style) {
+      case 'grid3': grid(3); break;
+      case 'pixels': grid(4); break;
+      case 'crumbs': { const n = 4, pt = []; for (let r = 0; r <= n; r++) { pt.push([]); for (let c = 0; c <= n; c++) { const edge = r === 0 || c === 0 || r === n || c === n; pt[r].push([c / n + (edge && (c === 0 || c === n) ? 0 : (Math.random() - 0.5) * 0.12), r / n + (edge && (r === 0 || r === n) ? 0 : (Math.random() - 0.5) * 0.12)]); } }
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) P.push([pt[r][c], pt[r][c + 1], pt[r + 1][c + 1], pt[r + 1][c]]); break; }
+      case 'slices': for (let k = 0; k < 4; k++) P.push(sq(k / 4, 0, 0.25, 1)); break;
+      case 'halves': P.push([[0, 0], [1, 0], [0, 1]], [[1, 0], [1, 1], [0, 1]]); break;
+      case 'split': P.push([[0, 0], [0.55, 0], [0.4, 0.3], [0.6, 0.55], [0.42, 0.8], [0.5, 1], [0, 1]], [[0.55, 0], [1, 0], [1, 1], [0.5, 1], [0.42, 0.8], [0.6, 0.55], [0.4, 0.3]]); break;
+      case 'shards': { const c = [0.45, 0.55], b = [[0, 0], [0.4, 0], [1, 0], [1, 0.45], [1, 1], [0.6, 1], [0, 1], [0, 0.6]]; for (let k = 0; k < b.length; k++) P.push([c, b[k], b[(k + 1) % b.length]]); break; }
+      case 'bricks': { const h = 1 / 3; P.push(sq(0, 0, 0.5, h), sq(0.5, 0, 0.5, h), sq(0, h, 0.25, h), sq(0.25, h, 0.5, h), sq(0.75, h, 0.25, h), sq(0, 2 * h, 0.5, h), sq(0.5, 2 * h, 0.5, h)); break; }
+      default: grid(2);                                       // quarters
+    }
+    return (polyCache[style] = P.map(pg => { const cx = pg.reduce((a, p) => a + p[0], 0) / pg.length, cy = pg.reduce((a, p) => a + p[1], 0) / pg.length; return { pg, cx, cy }; }));
+  }
+  function spawnFrags(colorIdx, cellX, cellY, delay, motion, line) {
+    const style = K.blocks[skinIndex].breakStyle, img = blockTex(colorIdx, cs), col = BLOCKS[((colorIdx % 7) + 7) % 7];
+    const base = { t: -delay, rot: 0, vr: 0, ox: 0, rotOff: 0, sc: 1, tint: 0, alpha: 1, ph: Math.random() * 6.3, m: motion, ocx: line.x, ocy: line.y };
+    const parts = style === 'drops'
+      ? Array.from({ length: 7 }, () => ({ drop: true, cx: rnd(0.2, 0.8), cy: rnd(0.2, 0.8), r: cs * rnd(0.12, 0.22) }))
+      : breakPolys(style).map(p => ({ poly: p.pg, cx: p.cx, cy: p.cy }));
+    for (const q of parts) {
+      const dx = q.cx - 0.5, dy = q.cy - 0.5, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+      const f = Object.assign({}, base, q, { img, col, x: cellX - cs / 2 + q.cx * cs, y: cellY - cs / 2 + q.cy * cs, vx: ux * 40, vy: uy * 40, life: 1.1 });
+      switch (motion) {
+        case 'explode': f.vx = ux * rnd(150, 300); f.vy = uy * rnd(150, 300) - 150; f.vr = rnd(-10, 10); break;
+        case 'pop': f.vx = ux * rnd(250, 420); f.vy = uy * rnd(250, 420) - 100; f.vr = rnd(-14, 14); break;
+        case 'gravity': f.vx = ux * 70 + rnd(-30, 30); f.vy = -rnd(60, 220); f.vr = rnd(-8, 8); f.life = 1.2; break;
+        case 'heavy': f.vx = ux * 50; f.vy = -rnd(20, 80); f.vr = rnd(-4, 4); break;
+        case 'fountain': f.vx = ux * 130 + rnd(-40, 40); f.vy = -rnd(380, 520); f.vr = rnd(-10, 10); f.life = 1.3; break;
+        case 'sand': f.vx = ux * 40; f.vy = -rnd(10, 60); break;
+        case 'leaf': case 'petal': f.vx = ux * 90 + (motion === 'petal' ? 60 : 0); f.vy = -rnd(60, 140); f.life = 1.8; break;
+        case 'snow': f.vx = ux * 50; f.vy = -rnd(30, 60); f.vr = rnd(-1.5, 1.5); f.life = 1.8; break;
+        case 'float': case 'wave': f.vx = ux * 30; f.vy = -rnd(10, 40); f.vr = rnd(-1, 1); f.life = 1.6; break;
+        case 'sink': f.vx = ux * 30; f.vy = rnd(0, 20); f.vr = rnd(-1, 1); f.life = 1.6; break;
+        case 'wind': f.vx = rnd(60, 160); f.vy = -rnd(40, 100); f.vr = rnd(-5, 5); f.life = 1.4; break;
+        case 'glitch': f.vx = 0; f.vy = 0; f.dir = Math.random() < 0.5 ? -1 : 1; f.life = 0.9; break;
+        case 'burn': f.vx = ux * 20; f.vy = -rnd(10, 30); f.life = 1.0; break;
+        case 'vortex': f.r0 = Math.hypot(f.x - line.x, f.y - line.y); f.a0 = Math.atan2(f.y - line.y, f.x - line.x); f.life = 0.9; break;
+      }
+      frags.push(f);
+    }
+  }
+  function drawFrags(dt) {
+    frags = frags.filter(f => {
+      f.t += dt; if (f.t < 0) return true; const k = f.t / f.life; if (k >= 1) return false;
+      switch (f.m) {
+        case 'explode': f.vy += 900 * dt; break;
+        case 'pop': f.vy += 600 * dt; f.vx *= 1 - 1.2 * dt; break;
+        case 'gravity': f.vy += 1400 * dt; break;
+        case 'heavy': f.vy += 2300 * dt; break;
+        case 'fountain': f.vy += 1100 * dt; break;
+        case 'sand': f.vy += 1300 * dt; f.sc = 1 - k * 0.7; break;
+        case 'leaf': case 'petal': f.vy = Math.min(f.vy + 320 * dt, 75); f.vx *= 1 - 1.5 * dt; if (f.m === 'petal') f.vx += 40 * dt;
+          f.ox = Math.sin(f.t * 3.2 + f.ph) * cs * 0.55; f.rotOff = Math.sin(f.t * 3.2 + f.ph) * 0.9; break;
+        case 'snow': f.vy = Math.min(f.vy + 160 * dt, 45); f.vx *= 1 - dt; f.ox = Math.sin(f.t * 2 + f.ph) * cs * 0.3; f.sc = 1 - k * 0.4; break;
+        case 'float': f.vy = Math.max(f.vy - 160 * dt, -90); f.ox = Math.sin(f.t * 4 + f.ph) * cs * 0.18; break;
+        case 'wave': f.vy = Math.max(f.vy - 120 * dt, -70); f.ox = Math.sin(f.t * 5 + f.ph) * cs * 0.45; f.rotOff = Math.sin(f.t * 5 + f.ph) * 0.4; break;
+        case 'sink': f.vy = Math.min(f.vy + 90 * dt, 55); f.ox = Math.sin(f.t * 2.5 + f.ph) * cs * 0.25; f.rotOff = Math.sin(f.t * 2.5 + f.ph) * 0.3; break;
+        case 'wind': f.vx += 260 * dt; f.vy += 140 * dt; break;
+        case 'glitch': f.vx += f.dir * 1100 * dt; if (Math.random() < 0.2) f.ox = rnd(-cs * 0.3, cs * 0.3); f.alpha = Math.random() < 0.25 ? 0.25 : 1; break;
+        case 'burn': f.vy = Math.max(f.vy - 140 * dt, -80); f.sc = 1 - k * 0.8; f.tint = Math.min(1, k * 2.2); break;
+        case 'vortex': { const e = k * k; const r = f.r0 * (1 - e), a = f.a0 + k * 9; f.x = f.ocx + Math.cos(a) * r; f.y = f.ocy + Math.sin(a) * r; f.rot = k * 8; f.sc = 1 - e * 0.9; break; }
+      }
+      if (f.m !== 'vortex') { f.x += f.vx * dt; f.y += f.vy * dt; f.rot += f.vr * dt; }
+      ctx.save(); ctx.globalAlpha = f.alpha * (k > 0.65 ? 1 - (k - 0.65) / 0.35 : 1);
+      ctx.translate(f.x + f.ox, f.y); ctx.rotate(f.rot + f.rotOff); ctx.scale(f.sc, f.sc);
+      if (f.drop) { ctx.fillStyle = f.col; ctx.beginPath(); ctx.arc(0, 0, f.r, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.arc(-f.r * 0.3, -f.r * 0.3, f.r * 0.3, 0, 7); ctx.fill(); }
+      else {
+        ctx.beginPath(); f.poly.forEach((p, j) => { const x = (p[0] - f.cx) * cs, y = (p[1] - f.cy) * cs; j ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); ctx.save(); ctx.clip();
+        ctx.drawImage(f.img, -f.cx * cs, -f.cy * cs, cs, cs);
+        if (f.tint > 0) { ctx.globalAlpha *= f.tint * 0.8; ctx.fillStyle = '#ff6a00'; ctx.fillRect(-cs, -cs, cs * 2, cs * 2); }
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      ctx.restore(); return true;
+    });
+  }
+
+  function linesOf(set) {
+    const lines = [];
+    for (let r = 0; r < 8; r++) { let f = true; for (let c = 0; c < 8; c++) if (!set.has(r * 8 + c)) { f = false; break; } if (f) lines.push({ row: r }); }
+    for (let c = 0; c < 8; c++) { let f = true; for (let r = 0; r < 8; r++) if (!set.has(r * 8 + c)) { f = false; break; } if (f) lines.push({ col: c }); }
+    return lines;
+  }
   function animateClear(clear, origin, color, placed) {
     const fxc = THEMES[themeIndex].fx, cells = [], set = new Set();
-    for (let i = 0; i < 64; i++) if (A.bitIsSet(clear.lo, clear.hi, i)) {
-      set.add(i);
+    for (let i = 0; i < 64; i++) if (A.bitIsSet(clear.lo, clear.hi, i)) set.add(i);
+    const lines = linesOf(set);
+    for (const i of set) {
       const p = cellCenter(i), col = placed.includes(i) ? color : (lastColors[i] >= 0 ? lastColors[i] : color);
       const delay = Math.hypot(p.x - origin.x, p.y - origin.y) / cs * 0.03;
-      cells.push({ p, col, delay, rv: rnd(-1, 1), vx: rnd(-60, 60) });
-      cellParticles(fxc.parts, fxc.colors, p.x, p.y, delay);
+      // środek linii, do której należy pole (dla „czarnej dziury”)
+      const r = Math.floor(i / 8), c = i % 8, ln = lines.find(l => l.row === r) || lines.find(l => l.col === c) || { row: r };
+      const lc = ln.row !== undefined ? { x: bx + bw / 2, y: by + (ln.row + 0.5) * cs } : { x: bx + (ln.col + 0.5) * cs, y: by + bw / 2 };
+      cells.push({ p, col, delay });
+      spawnFrags(col, p.x, p.y, delay + 0.09, fxc.motion, lc);
+      cellParticles(fxc.parts, fxc.colors, p.x, p.y, delay + 0.05);
     }
-    linesOf(set).forEach(l => lineEffect(fxc, l));
-    const V = fxc.vanish, acc = fxc.accent, D = { flash: 0.26, float: 0.5, fade: 0.4, crumble: 0.35, freeze: 0.45, glitch: 0.35, fall: 0.7, burn: 0.45, pop: 0.25, spin: 0.5 }[V] || 0.3;
-    addFx(D + 0.6, t => {
+    lines.forEach(l => lineEffect(fxc, l));
+    // krótki błysk całego klocka, zanim rozpadnie się na kawałki
+    addFx(1.2, t => {
       for (const c of cells) {
-        const k = t - c.delay; if (k > D) continue;
-        const e = Math.max(0, k) / D; let s = 1, a = 1, over = 0, overCol = '#fff', dx = 0, dy = 0, rot = 0;
-        if (k >= 0) switch (V) {
-          case 'flash': if (k < 0.08) { s = 1 + 0.2 * k / 0.08; over = 0.7 * k / 0.08; } else { const q = (k - 0.08) / (D - 0.08); s = 1.2 - 1.1 * q; a = 1 - q; over = 0.7; } overCol = acc; break;
-          case 'float': dy = -e * cs * 0.8; a = 1 - e; s = 1 - 0.3 * e; over = 0.5 * (1 - e); overCol = acc; break;
-          case 'fade': a = 1 - e; s = 1 + 0.15 * e; over = 0.6 * Math.sin(e * Math.PI); overCol = acc; break;
-          case 'crumble': s = 1 - e; dy = e * e * cs * 0.6; a = 1 - e * 0.5; overCol = acc; over = 0.3; break;
-          case 'freeze': over = Math.min(0.85, e * 2); overCol = '#e8f8ff'; if (e > 0.5) { s = 1 + (e - 0.5) * 0.6; a = 1 - (e - 0.5) * 2; } break;
-          case 'glitch': dx = (Math.random() - 0.5) * cs * 0.4 * e; a = Math.random() < 0.3 ? 0.2 : 1 - e; over = 0.5; overCol = pick(fxc.colors); break;
-          case 'fall': dy = 900 * k * k - 120 * k; dx = c.vx * k; rot = c.rv * 8 * k; a = 1 - e * 0.6; break;
-          case 'burn': over = Math.min(0.9, e * 1.6); overCol = '#ff6a00'; s = 1 - 0.5 * e; dy = -e * cs * 0.2; a = 1 - e; break;
-          case 'pop': s = 1 + 0.5 * e; a = 1 - e; over = 0.4 * (1 - e); overCol = '#fff'; break;
-          case 'spin': s = 1 - e; rot = e * 6 * (c.rv > 0 ? 1 : -1); a = 1 - e * 0.5; over = 0.4 * e; overCol = acc; break;
-        }
-        ctx.save(); ctx.translate(c.p.x + dx, c.p.y + dy); ctx.rotate(rot); ctx.globalAlpha = Math.max(0, a);
-        ctx.drawImage(blockTex(c.col, cs), -cs * s / 2, -cs * s / 2, cs * s, cs * s);
-        if (over > 0) { ctx.globalAlpha = Math.max(0, a) * over; ctx.fillStyle = overCol; ctx.fillRect(-cs * s / 2, -cs * s / 2, cs * s, cs * s); }
-        ctx.restore(); ctx.globalAlpha = 1;
+        const k = t - c.delay; if (k > 0.09) continue;
+        const e = Math.max(0, k) / 0.09, s = 1 + 0.1 * e;
+        ctx.drawImage(blockTex(c.col, cs), c.p.x - cs * s / 2, c.p.y - cs * s / 2, cs * s, cs * s);
+        if (k >= 0) { ctx.globalAlpha = 0.6 * e; ctx.fillStyle = fxc.accent; ctx.fillRect(c.p.x - cs * s / 2, c.p.y - cs * s / 2, cs * s, cs * s); ctx.globalAlpha = 1; }
       }
     });
   }
@@ -788,7 +870,7 @@
   }
 
   function newGame(mode) {
-    hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = []; fp = [];
+    hideOverlay(); replay = null; cancelCelebration(); fx.length = 0; parts = []; fp = []; frags = [];
     model.newGame(mode); displayedScore = 0; lastColors = model.cells.slice();
     S.setMusic(0); S.play('newRound');
     const t = now(); trayAnim = [t, t + 0.07, t + 0.14];
