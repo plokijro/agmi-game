@@ -207,7 +207,7 @@
       helperChance: [0.02, 0, 0, 0, 0][l], candidates: 6, pickPosition: [0, 0.25, 0.5, 0.75, 1][l],
       jitter: [false, true, true, true, false][l], emptyBonus: [1, 0.5, 0.25, 0.1, 0][l],
       requireClear: [1, 1, 0.9, 0.7, 0.5][l], great: [0.45, 0.35, 0.3, 0.25, 0.15][l],
-      fullClear: [1, 0.9, 0.75, 0.6, 0.45][l], steer: [0.6, 0.5, 0.4, 0.3, 0.2][l],
+      fullClear: [1, 0.9, 0.75, 0.6, 0.45][l], steer: [0.6, 0.5, 0.4, 0.3, 0.2][l], randomPick: l === 4,
     };
   }
   function randomFamilies(l, count) {
@@ -355,24 +355,36 @@
   }
 
   // ---------- Losowanie rundy ----------
-  function generate(lo, hi, score) {
+  // pity = premia do szans (w punktach procentowych / 100) za każdą nieudaną próbę danego przypadku:
+  // co losowanie bez danego zestawu szansa rośnie o 10 pkt, po jego otrzymaniu wraca do bazowej
+  const PITY_STEP = 0.1;
+  function generate(lo, hi, score, pity) {
+    pity = pity || { full: 0, steer: 0, great: 0 };
     const l = level(score), cfg = config(l), start = performance.now(), cells = popcount(lo, hi);
-    if (cells > 0 && cells <= 40 && Math.random() < cfg.fullClear) {
-      const b = findFullClear(lo, hi, 150);
-      if (b) return { ids: b.ids, solution: b.solution, hintLines: b.lines, hintEmpty: true };
-    }
-    if (cells <= 30 && Math.random() < cfg.steer) {
-      const deadline = performance.now() + 200;
-      for (const c of topSets(lo, hi, l, 8)) {
-        if (performance.now() > deadline) break;
-        if (c.finalLo === 0 && c.finalHi === 0) continue;
-        if (findFullClear(c.finalLo, c.finalHi, 50)) return { ids: c.ids, solution: c.solution, hintLines: c.lines, hintEmpty: c.empties };
+    const miss = k => { pity[k] = Math.min(1, pity[k] + PITY_STEP); }, hit = k => { pity[k] = 0; };
+    if (cells > 0 && cells <= 40) {
+      if (Math.random() < cfg.fullClear + pity.full) {
+        const b = findFullClear(lo, hi, 150);
+        if (b) { hit('full'); return { ids: b.ids, solution: b.solution, hintLines: b.lines, hintEmpty: true, kind: 'full' }; }
       }
+      miss('full');
     }
-    if (Math.random() < cfg.great) {
+    if (cells <= 30) {
+      if (Math.random() < cfg.steer + pity.steer) {
+        const deadline = performance.now() + 200;
+        for (const c of topSets(lo, hi, l, 8)) {
+          if (performance.now() > deadline) break;
+          if (c.finalLo === 0 && c.finalHi === 0) continue;
+          if (findFullClear(c.finalLo, c.finalHi, 50)) { hit('steer'); return { ids: c.ids, solution: c.solution, hintLines: c.lines, hintEmpty: c.empties, kind: 'steer' }; }
+        }
+      }
+      miss('steer');
+    }
+    if (Math.random() < cfg.great + pity.great) {
       const b = build(lo, hi, 'lines', l);
-      if (b && b.lines >= 2) return { ids: b.ids, solution: b.solution, hintLines: b.lines, hintEmpty: b.empties };
+      if (b && b.lines >= 2) { hit('great'); return { ids: b.ids, solution: b.solution, hintLines: b.lines, hintEmpty: b.empties, kind: 'great' }; }
     }
+    miss('great');
     const found = []; let attempts = 0;
     while (attempts < 80 && found.length < cfg.candidates && performance.now() - start < 300) {
       attempts++;
@@ -387,6 +399,7 @@
       pool.sort((a, b) => ease(b) - ease(a));
       let idx = Math.round(cfg.pickPosition * (pool.length - 1));
       if (cfg.jitter) idx += Math.floor(Math.random() * 3) - 1;
+      if (cfg.randomPick) idx = Math.floor(Math.random() * pool.length);      // najwyższy poziom: po prostu losowy zestaw
       const ch = pool[Math.max(0, Math.min(pool.length - 1, idx))];
       return { ids: ch.ids, solution: ch.a.bestSolution.length ? ch.a.bestSolution : ch.sol, hintLines: Math.max(0, ch.a.maxLines), hintEmpty: ch.a.canEmpty };
     }
@@ -417,13 +430,14 @@
     newGame(mode) {
       if (mode) this.mode = mode;
       this.cells = new Array(64).fill(-1);
-      this.score = 0; this.combo = 0; this.roundHadClear = false; this.isGameOver = false; this.round = 0;
+      this.score = 0; this.combo = 0; this.roundHadClear = false; this.isGameOver = false; this.round = 0; this.pity = { full: 0, steer: 0, great: 0 };
       this.startNewRound(); this.save();
     }
     startNewRound() {
       this.round++; this.roundHadClear = false; this.roundLinesCleared = 0;
       const [lo, hi] = this.bits;
-      const r = generate(lo, hi, this.score);
+      if (!this.pity) this.pity = { full: 0, steer: 0, great: 0 };
+      const r = generate(lo, hi, this.score, this.pity);
       const colors = [0, 1, 2, 3, 4, 5, 6].sort(() => Math.random() - 0.5);
       this.tray = r.ids.map((id, i) => ({ shapeID: id, color: colors[i], used: false }));
       this.roundStartCells = this.cells.slice();
@@ -486,7 +500,7 @@
     save() {
       const s = { mode: this.mode, cells: this.cells, tray: this.tray, score: this.score, combo: this.combo, roundHadClear: this.roundHadClear,
         roundStartCells: this.roundStartCells, roundPieces: this.roundPieces, solution: this.solution, gameOver: this.isGameOver, round: this.round,
-        potentialLines: this.potentialLines, potentialEmpty: this.potentialEmpty, roundLinesCleared: this.roundLinesCleared };
+        potentialLines: this.potentialLines, potentialEmpty: this.potentialEmpty, roundLinesCleared: this.roundLinesCleared, pity: this.pity };
       store.set(SAVE_KEY, JSON.stringify(s));
     }
     load() {
@@ -495,7 +509,7 @@
       if (!s.tray.every(p => BY_ID[p.shapeID])) return false;
       Object.assign(this, { mode: s.mode || 'classic', cells: s.cells, tray: s.tray, score: s.score, combo: s.combo, roundHadClear: s.roundHadClear,
         roundStartCells: s.roundStartCells || s.cells.slice(), roundPieces: s.roundPieces || s.tray, solution: s.solution || [], isGameOver: false,
-        round: s.round || 1, potentialLines: s.potentialLines || 0, potentialEmpty: !!s.potentialEmpty, roundLinesCleared: s.roundLinesCleared || 0 });
+        round: s.round || 1, potentialLines: s.potentialLines || 0, potentialEmpty: !!s.potentialEmpty, roundLinesCleared: s.roundLinesCleared || 0, pity: s.pity || { full: 0, steer: 0, great: 0 } });
       if (this.tray.every(p => p.used)) this.startNewRound();
       if (!this.hasAnyMove()) this.isGameOver = true;
       this.loadedFromSave = true;
