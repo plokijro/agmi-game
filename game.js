@@ -43,6 +43,8 @@
   function readSafe() {
     const d = document.getElementById('safe'); const cs2 = getComputedStyle(d);
     safeTop = parseFloat(cs2.paddingTop) || 0; safeBottom = parseFloat(cs2.paddingBottom) || 0;
+    // zapas, gdy aplikacja z ekranu początkowego nie dostała jeszcze marginesu od systemu
+    if (navigator.standalone && safeTop < 20) safeTop = screen.height >= 812 ? 50 : 20;
   }
   function layout() {
     readSafe();
@@ -879,6 +881,17 @@
 
   // ---------- start ----------
   window.addEventListener('resize', layout);
+  // iPhone czasem podaje przy starcie aplikacji złe wymiary ekranu i zerowy margines na pasek statusu
+  // (godzina, bateria) – wtedy ikony chowały się pod nim. Sprawdzamy więc co chwilę, czy coś się zmieniło.
+  let layoutSig = '';
+  function checkLayout() {
+    const d = getComputedStyle(document.getElementById('safe'));
+    const sig = [window.innerWidth, window.innerHeight, d.paddingTop, d.paddingBottom].join('|');
+    if (sig !== layoutSig) { layoutSig = sig; layout(); }
+  }
+  setInterval(checkLayout, 400);
+  window.addEventListener('pageshow', checkLayout);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkLayout(); setTimeout(checkLayout, 300); } });
   window.addEventListener('orientationchange', () => setTimeout(layout, 200));
   cv.addEventListener('pointerdown', e => { e.preventDefault(); pointerDown(e); });
   window.addEventListener('pointermove', e => { if (drag) { e.preventDefault(); moveDrag(e.clientX, e.clientY); } }, { passive: false });
